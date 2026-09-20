@@ -34,7 +34,6 @@ jobs:
       - name: Test
         run: pytest -q
       - name: Verify Gmail credentials
-        if: github.event_name == 'schedule' || inputs.dry_run == false
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
