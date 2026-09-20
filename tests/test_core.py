@@ -37,6 +37,12 @@ def test_rejects_tv_series_creator_false_positive():
     assert select_stories([row], set(), now=NOW, window_hours=48, limit=10) == []
 
 
+def test_rejects_roundups_and_job_listings():
+    roundup = story("Top 10 influencer marketing platforms", 2)
+    internship = story("Influencer marketing internship at a creator platform", 2, "https://example.com/job")
+    assert select_stories([roundup, internship], set(), now=NOW, window_hours=48, limit=10) == []
+
+
 def test_breaking_email_has_links():
     row = story("TikTok creator raises funding", 1)
     subject, text, html = render_email("breaking", [row], NOW)

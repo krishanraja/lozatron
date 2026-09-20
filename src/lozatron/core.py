@@ -106,6 +106,7 @@ class Story:
 
 def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
     text = f"{story.title} {story.summary}".lower()
+    title = story.title.lower()
     age = (now - story.published_at).total_seconds() / 3600
     if age < -1 or age > window_hours:
         return False
@@ -114,6 +115,8 @@ def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
     if not (has_creator_context or has_creator_plural):
         return False
     if not any(term in text for term in BUSINESS_TERMS):
+        return False
+    if re.search(r"\btop\s+\d+\b", title) or any(term in title for term in ("internship", "job opening", "apply now")):
         return False
     if any(term in text for term in SOFT_PATTERNS) and not any(term in text for term in STRONG_TERMS):
         return False
