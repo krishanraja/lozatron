@@ -3,6 +3,7 @@ import json
 
 from lozatron.core import DeliveryState, Story, render_email, select_stories
 from lozatron.apify import SpendState
+from lozatron.gmail import cc_recipients
 
 UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
@@ -67,3 +68,10 @@ def test_paid_source_cap_is_fail_closed(tmp_path):
     assert state.permits("youtube_community", 1.00)
     state.record("youtube_community")
     assert not state.permits("reddit_creator", 1.00)
+
+
+def test_cc_recipients_are_optional_and_comma_separated(monkeypatch):
+    monkeypatch.delenv("LOZ_CC_EMAILS", raising=False)
+    assert cc_recipients() == []
+    monkeypatch.setenv("LOZ_CC_EMAILS", "one@example.com, two@example.com")
+    assert cc_recipients() == ["one@example.com", "two@example.com"]

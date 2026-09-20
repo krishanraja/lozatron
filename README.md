@@ -22,6 +22,7 @@ Scheduled jobs stay off until the repository variable `LOZATRON_ENABLED` is set 
 - `GOOGLE_REFRESH_TOKEN`
 - `GOOGLE_SENDER_EMAIL`
 - `LOZ_RECIPIENT_EMAILS`, comma-separated
+- `LOZ_CC_EMAILS`, optional comma-separated CC recipients
 
 Optional:
 

@@ -36,12 +36,20 @@ def recipients() -> list[str]:
     return [item for item in values if item]
 
 
+def cc_recipients() -> list[str]:
+    values = [item.strip() for item in os.environ.get("LOZ_CC_EMAILS", "").split(",")]
+    return [item for item in values if item]
+
+
 def send(subject: str, text_body: str, html_body: str) -> str:
     sender = _required("GOOGLE_SENDER_EMAIL")
     to = recipients()
+    cc = cc_recipients()
     message = EmailMessage()
     message["From"] = sender
     message["To"] = ", ".join(to)
+    if cc:
+        message["Cc"] = ", ".join(cc)
     message["Subject"] = subject
     message.set_content(text_body)
     message.add_alternative(html_body, subtype="html")
@@ -74,4 +82,3 @@ def verify_credentials() -> None:
         payload = json.loads(response.read().decode("utf-8"))
     if not payload.get("emailAddress"):
         raise RuntimeError("Gmail profile verification failed")
-
