@@ -59,6 +59,7 @@ def test_state_round_trip(tmp_path):
     state.save()
     assert row.key in DeliveryState(path).load().keys()
     assert json.loads(path.read_text())["version"] == 1
+    assert json.loads(path.read_text())["last_success_date"] == "2026-09-20"
 
 
 def test_paid_source_cap_is_fail_closed(tmp_path):

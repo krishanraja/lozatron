@@ -2,6 +2,8 @@
 
 Lozatron is an email-first creator-business briefing service for Lauren. GitHub Actions owns the schedules and runtime. The retired OpenClaw VPS is not part of the production path.
 
+Production status: live on GitHub Actions since 2026-09-20. Telegram delivery is retired.
+
 ## What runs
 
 - Briefings at 09:00, 14:00 and 18:00 in `America/New_York`.

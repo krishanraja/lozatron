@@ -151,13 +151,16 @@ class DeliveryState:
     def __init__(self, path: Path):
         self.path = path
         self.rows: dict[str, str] = {}
+        self.last_success_date = ""
 
     def load(self) -> "DeliveryState":
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             self.rows = dict(data.get("delivered", {}))
+            self.last_success_date = str(data.get("last_success_date", ""))
         except (FileNotFoundError, json.JSONDecodeError, TypeError, ValueError):
             self.rows = {}
+            self.last_success_date = ""
         return self
 
     def keys(self) -> set[str]:
@@ -165,6 +168,7 @@ class DeliveryState:
 
     def mark(self, stories: Iterable[Story], when: dt.datetime) -> None:
         stamp = when.astimezone(UTC).isoformat()
+        self.last_success_date = when.astimezone(UTC).date().isoformat()
         for story in stories:
             self.rows[story.key] = stamp
 
@@ -179,7 +183,11 @@ class DeliveryState:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"version": 1, "delivered": dict(sorted(self.rows.items()))}
+        payload = {
+            "version": 1,
+            "last_success_date": self.last_success_date,
+            "delivered": dict(sorted(self.rows.items())),
+        }
         self.path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
