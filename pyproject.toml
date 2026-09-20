@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lozatron"
+version = "1.0.0"
+description = "Email-first creator-business briefings for Lauren"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+lozatron = "lozatron.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

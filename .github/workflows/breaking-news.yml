@@ -1,0 +1,63 @@
+name: Lozatron breaking news
+
+on:
+  schedule:
+    - cron: "0 0-23/3 * * *"
+    - cron: "30 1-23/3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Fetch and rank without sending email
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lozatron-delivery
+  cancel-in-progress: false
+
+jobs:
+  breaking:
+    if: vars.LOZATRON_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e . pytest
+      - name: Test
+        run: pytest -q
+      - name: Verify Gmail credentials
+        if: github.event_name == 'schedule' || inputs.dry_run == false
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+        run: lozatron --mode breaking --verify-credentials
+      - name: Run breaking-news check
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          GOOGLE_SENDER_EMAIL: ${{ secrets.GOOGLE_SENDER_EMAIL }}
+          LOZ_RECIPIENT_EMAILS: ${{ secrets.LOZ_RECIPIENT_EMAILS }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          LOZ_ENABLE_PAID_SOURCES: ${{ vars.LOZ_ENABLE_PAID_SOURCES }}
+          LOZ_APIFY_DAILY_USD_CAP: ${{ vars.LOZ_APIFY_DAILY_USD_CAP }}
+        run: lozatron --mode breaking ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
+      - name: Save delivery state
+        if: github.event_name == 'schedule' || inputs.dry_run == false
+        run: |
+          if git diff --quiet -- state; then exit 0; fi
+          git config user.name "lozatron[bot]"
+          git config user.email "lozatron-bot@users.noreply.github.com"
+          git add state
+          git commit -m "state: record breaking delivery and paid-source use"
+          git push

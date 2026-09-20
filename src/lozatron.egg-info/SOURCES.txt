@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+src/lozatron/__init__.py
+src/lozatron/app.py
+src/lozatron/core.py
+src/lozatron/gmail.py
+src/lozatron/sources.py
+src/lozatron.egg-info/PKG-INFO
+src/lozatron.egg-info/SOURCES.txt
+src/lozatron.egg-info/dependency_links.txt
+src/lozatron.egg-info/entry_points.txt
+src/lozatron.egg-info/top_level.txt
+tests/test_core.py
