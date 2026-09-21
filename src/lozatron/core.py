@@ -145,7 +145,58 @@ class Story:
         }
 
 
+# The wide net used when the analyst is scoring relevance. Its job is to bound
+# cost and keep plainly off-topic material out, NOT to decide the brief -- that
+# is what the narrow CREATOR_TERMS gate was doing, and a 22-phrase tuple deciding
+# what a President reads is the ceiling on how good this can get.
+DOMAIN_TERMS = (
+    "creator", "creators", "influencer", "influencers", "ugc", "streamer", "streaming",
+    "youtube", "tiktok", "instagram", "snapchat", "twitch", "kick", "substack",
+    "patreon", "spotify", "podcast", "podcaster", "newsletter", "shorts", "reels",
+    "subscriber", "subscription", "monetiz", "sponsorship", "brand deal", "creator fund",
+    "talent agency", "mcn", "fan", "audience", "social video", "short-form",
+    "roblox", "discord", "onlyfans", "beehiiv", "linktree", "gumroad", "whatnot",
+    "social media", "digital media", "advertis", "affiliate", "merch", "storefront",
+)
+
+# Freshness is arithmetic and stays in code, always. This is the June 2026
+# crisis encoded: a rule that lives in prompt text is not a rule.
+JUNK_TITLE = re.compile(r"\btop\s+\d+\b")
+JUNK_PHRASES = ("internship", "job opening", "apply now")
+
+
+def passes_hard_gates(story: Story, now: dt.datetime, window_hours: int) -> bool:
+    """Non-negotiable, model-independent rejection. Freshness and obvious junk."""
+    age = (now - story.published_at).total_seconds() / 3600
+    if age < -1 or age > window_hours:
+        return False
+    title = story.title.lower()
+    if JUNK_TITLE.search(title) or any(term in title for term in JUNK_PHRASES):
+        return False
+    return True
+
+
+def candidate(story: Story, now: dt.datetime, window_hours: int) -> bool:
+    """Wide pre-filter for the analyst path.
+
+    Passing this does not mean a story ships. It means the story is in the
+    domain at all and is worth the tokens to score. Code still applies the
+    relevance threshold and the limit afterwards, so the model can never add a
+    story that failed a hard gate and never decides how many ship.
+    """
+    if not passes_hard_gates(story, now, window_hours):
+        return False
+    text = f"{story.title} {story.summary}".lower()
+    return any(term in text for term in DOMAIN_TERMS)
+
+
 def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
+    """The strict deterministic gate. Unchanged.
+
+    This remains the selection path whenever the analyst is off or degraded, so
+    a provider outage makes the brief narrower rather than flooding Lauren with
+    unscored material. It is the floor, not the ceiling.
+    """
     text = f"{story.title} {story.summary}".lower()
     title = story.title.lower()
     age = (now - story.published_at).total_seconds() / 3600

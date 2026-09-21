@@ -75,3 +75,44 @@ def test_cc_recipients_are_optional_and_comma_separated(monkeypatch):
     assert cc_recipients() == []
     monkeypatch.setenv("LOZ_CC_EMAILS", "one@example.com, two@example.com")
     assert cc_recipients() == ["one@example.com", "two@example.com"]
+
+
+# --- the wide pre-filter for the analyst path ---
+
+def test_hard_gates_reject_stale_regardless_of_topic():
+    from lozatron.core import passes_hard_gates
+    assert not passes_hard_gates(story("Creator signs brand deal", 60), NOW, 48)
+
+
+def test_hard_gates_reject_listicles_and_job_ads():
+    from lozatron.core import passes_hard_gates
+    assert not passes_hard_gates(story("Top 10 creator platforms", 2), NOW, 48)
+    assert not passes_hard_gates(story("Creator marketing internship open", 2), NOW, 48)
+
+
+def test_candidate_admits_on_topic_stories_the_strict_gate_drops():
+    """The strict tuple matches `creators` plural only, so this was invisible."""
+    from lozatron.core import candidate
+    row = story("YouTube debuts Canadian creator shows and shopping tools", 2)
+    row.summary = "The platform expands its creator programme in Canada."
+    assert candidate(row, NOW, 48)
+    assert not select_stories([row], set(), now=NOW, window_hours=48, limit=10)
+
+
+def test_candidate_still_excludes_plainly_off_domain_material():
+    from lozatron.core import candidate
+    row = story("Navy outlines shipbuilding budget for next decade", 2)
+    row.summary = "Procurement plans for naval vessels."
+    assert not candidate(row, NOW, 48)
+
+
+def test_candidate_never_admits_what_a_hard_gate_rejected():
+    """The pre-filter widens topic scope only. Freshness is not negotiable."""
+    from lozatron.core import candidate
+    row = story("YouTube creator monetization expands", 100)
+    assert not candidate(row, NOW, 48)
+
+
+def test_strict_gate_is_unchanged_and_remains_the_fallback():
+    row = story("YouTube creator signs major brand partnership", 2)
+    assert select_stories([row], set(), now=NOW, window_hours=48, limit=10)
