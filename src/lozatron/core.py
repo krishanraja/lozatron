@@ -42,6 +42,28 @@ STRONG_TERMS = (
 )
 
 
+# Feeds append this when they truncate a description.
+_RSS_TRUNCATION = re.compile(r"\s*\[(?:\u2026|\.\.\.)\]\s*$")
+_TAG = re.compile(r"<[^>]+>")
+
+
+def clean_feed_text(value: str, limit: int = 600) -> str:
+    """Turn a raw feed description into plain readable prose.
+
+    Feed summaries arrive already containing HTML entities and markup. Escaping
+    them directly turns `&#8217;` into `&amp;#8217;`, which renders as the
+    literal characters `&#8217;` in the inbox -- the glitch Lauren reported.
+    Unescape first, strip tags, then let the renderer escape once.
+    """
+    text = _TAG.sub(" ", str(value or ""))
+    text = html.unescape(text)
+    # Unescaping can expose a second layer, and some feeds double-encode.
+    if "&" in text:
+        text = html.unescape(text)
+    text = _RSS_TRUNCATION.sub("", re.sub(r"\s+", " ", text).strip())
+    return text[:limit].strip()
+
+
 def env_text(name: str, default: str = "") -> str:
     """Read an environment variable, treating empty as unset.
 
@@ -390,7 +412,7 @@ def render_email(mode: str, stories: list[Story], now: dt.datetime) -> tuple[str
     html_rows = [f"<h1>{html.escape(label)}</h1>"]
     for story in stories:
         age = max(0, round((now - story.published_at).total_seconds() / 3600))
-        summary = re.sub(r"\s+", " ", story.summary).strip()[:500]
+        summary = clean_feed_text(story.summary, 500)
         text_lines.extend([
             story.title,
             f"{story.source}, {age}h old",

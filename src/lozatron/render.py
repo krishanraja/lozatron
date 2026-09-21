@@ -20,6 +20,7 @@ from html.parser import HTMLParser
 from zoneinfo import ZoneInfo
 
 from .brief import Brief, Entry
+from .core import clean_feed_text
 
 EASTERN = ZoneInfo("America/New_York")
 
@@ -71,7 +72,24 @@ def assert_render_shape(markup: str, entry_count: int) -> None:
 
 
 def _t(value: str, limit: int = 600) -> str:
+    """Escape trusted plain text once.
+
+    Used for analyst prose and our own strings, which are plain by contract.
+    Deliberately does NOT unescape: unescaping model output could resurrect
+    markup the analyst's validation gate had already neutralised, so the feed
+    cleaner is kept to the one place that needs it.
+    """
     return html.escape(re.sub(r"\s+", " ", str(value or "")).strip()[:limit])
+
+
+def _feed(value: str, limit: int = 400) -> str:
+    """Escape a raw feed summary, after unescaping the entities it arrives with.
+
+    Feed descriptions carry `&#8217;` and friends. Escaping those directly makes
+    the `&` into `&amp;`, so the entity prints literally in the inbox. Unescape,
+    strip tags, then escape exactly once.
+    """
+    return html.escape(clean_feed_text(value, limit))
 
 
 def _age(hours: int) -> str:
@@ -121,7 +139,7 @@ def render_text(brief: Brief) -> str:
             if entry.low_confidence:
                 lines.append("   [low confidence]")
         else:
-            lines.append(f"   {re.sub(r'<[^>]+>', '', entry.summary)[:400]}")
+            lines.append(f"   {clean_feed_text(entry.summary, 400)}")
         lines += [f"   {entry.url}", ""]
     if brief.filtered:
         summary = ", ".join(f"{count} {reason}" for reason, count in sorted(brief.filtered.items()))
@@ -162,7 +180,7 @@ def _story(entry: Entry, index: int) -> str:
     else:
         body.append(
             f'<p style="margin:0;font-size:16px;line-height:1.55;color:{INK};">'
-            f'{_t(re.sub(r"<[^>]+>", "", entry.summary), 400)}</p>'
+            f'{_feed(entry.summary, 400)}</p>'
         )
 
     return (

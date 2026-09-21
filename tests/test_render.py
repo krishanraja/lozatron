@@ -144,3 +144,51 @@ def test_subject_uses_eastern_time_not_utc():
     # 01:30 UTC on the 22nd is still the evening of the 21st in New York.
     late = brief(generated_at=dt.datetime(2026, 9, 22, 1, 30, tzinfo=UTC), slot="2026-09-21T18")
     assert "21 Sep" in subject(late)
+
+
+# --- feed text arrives pre-escaped; escaping it again is what Lauren saw ---
+
+def test_feed_entities_do_not_reach_the_inbox_literally():
+    """The reported glitch: `Here&#8217;s` printing as those exact characters."""
+    from lozatron.render import _feed
+    assert _feed("Here&#8217;s proof in pudding") == "Here’s proof in pudding"
+    assert "&#8217;" not in _feed("Here&#8217;s proof")
+    assert "&amp;" not in _feed("Here&#8217;s proof")
+
+
+def test_rss_truncation_marker_is_dropped():
+    from lozatron.render import _feed
+    assert _feed("A story about a deal [&#8230;]") == "A story about a deal"
+    assert _feed("A story about a deal […]") == "A story about a deal"
+
+
+def test_embedded_feed_markup_is_stripped_not_shown():
+    from lozatron.render import _feed
+    assert _feed("<p>A <b>big</b> deal</p>") == "A big deal"
+
+
+def test_double_encoded_feed_text_resolves():
+    from lozatron.render import _feed
+    assert _feed("Here&amp;#8217;s proof") == "Here’s proof"
+
+
+def test_feed_cleaner_still_escapes_live_markup():
+    """Unescaping must not be able to resurrect a working tag."""
+    from lozatron.render import _feed
+    out = _feed("&lt;script&gt;alert(1)&lt;/script&gt; a deal happened")
+    assert "<script" not in out
+    assert "&lt;script" in out
+
+
+def test_analyst_text_is_not_unescaped():
+    """Model prose is plain by contract; unescaping it could undo the wall."""
+    from lozatron.render import _t
+    assert _t("&lt;script&gt;") == "&amp;lt;script&amp;gt;"
+
+
+def test_full_render_carries_no_literal_entities():
+    rows = [entry(analysed=False, summary="Patreon&#8217;s new tier launched [&#8230;]")]
+    markup = render_html(brief(rows))
+    assert "&#8217;" not in markup
+    assert "&#8230;" not in markup
+    assert "Patreon’s new tier launched" in markup
