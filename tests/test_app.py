@@ -6,6 +6,7 @@ from lozatron import app
 from lozatron.core import DeliveryState, Story
 
 UTC = dt.timezone.utc
+NOW = dt.datetime(2026, 9, 21, 13, 5, tzinfo=UTC)
 
 
 def fake_collect(rows):
@@ -101,3 +102,55 @@ def test_gate_is_off_by_default_so_dispatch_always_runs(tmp_path, monkeypatch):
     result = app.run("briefing", tmp_path / "d.json", tmp_path / "s.json", dry_run=True)
     assert "skipped" not in result
     assert result["slot"] is None
+
+
+# --- preview must never reach the brief's reader ---
+
+def test_preview_sends_only_to_ops_never_to_recipients(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOZ_RECIPIENT_EMAILS", "lauren@example.com")
+    monkeypatch.setenv("LOZ_OPS_EMAILS", "krish@example.com")
+    monkeypatch.setattr(app, "utcnow", lambda: NOW)
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+    captured = {}
+
+    def spy(subject, text, html, *, to=None, cc=None, **kw):
+        captured["to"] = to
+        captured["cc"] = cc
+        captured["subject"] = subject
+        return "msg-preview"
+
+    monkeypatch.setattr(app.gmail, "send", spy)
+    result = app.preview("briefing", tmp_path / "delivered.json")
+
+    assert captured["to"] == ["krish@example.com"]
+    assert captured["cc"] == []
+    assert "lauren@example.com" not in str(captured)
+    assert captured["subject"].startswith("[PREVIEW]")
+    assert result["sent"] is True
+
+
+def test_preview_never_marks_state(tmp_path, monkeypatch):
+    """Marking would suppress these stories from Lauren's next real brief."""
+    state_path = tmp_path / "delivered.json"
+    monkeypatch.setenv("LOZ_OPS_EMAILS", "krish@example.com")
+    monkeypatch.setattr(app, "utcnow", lambda: NOW)
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+    monkeypatch.setattr(app.gmail, "send", lambda *a, **k: "msg")
+
+    app.preview("briefing", state_path)
+    assert DeliveryState(state_path).load().keys() == set()
+    assert not state_path.exists() or DeliveryState(state_path).load().delivered_slots() == set()
+
+
+def test_preview_without_ops_address_sends_nothing(tmp_path, monkeypatch):
+    monkeypatch.delenv("LOZ_OPS_EMAILS", raising=False)
+    monkeypatch.delenv("LOZ_CC_EMAILS", raising=False)
+    monkeypatch.setattr(app, "utcnow", lambda: NOW)
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+
+    def boom(*a, **k):
+        raise AssertionError("must not send without an ops address")
+
+    monkeypatch.setattr(app.gmail, "send", boom)
+    result = app.preview("briefing", tmp_path / "d.json")
+    assert result["sent"] is False and result["recipients"] == 0

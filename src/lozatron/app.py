@@ -273,6 +273,67 @@ def compare(mode: str, state_path: Path) -> dict[str, object]:
     }
 
 
+def preview(mode: str, state_path: Path) -> dict[str, object]:
+    """Render a real brief and send it to the ops address only.
+
+    Deliberately separate from `run`: it never reads or writes the delivery
+    ledger and never resolves the brief's recipients, so a preview cannot reach
+    Lauren and cannot mark a story as delivered. Marking would suppress those
+    stories from her next real brief, which is the quiet way a preview does
+    damage.
+    """
+    now = utcnow()
+    state = DeliveryState(state_path).load()
+    stories, source_errors = collect(now)
+    window = 8 if mode == "breaking" else 48
+    limit = 3 if mode == "breaking" else 10
+
+    # Show what she would actually receive, so already-delivered stories are
+    # still suppressed here.
+    clusters = select_clusters(stories, state.contains, now=now, window_hours=window, limit=limit)
+
+    analysis, reason = (None, "off")
+    if env_text("LOZ_ANALYST", "off").lower() != "off" and clusters:
+        ledger = analyst.LlmLedger(state_path.parent / "llm_spend.json").load()
+        analysis, reason = analyst.analyse(
+            clusters, [], ledger=ledger,
+            cap_usd=env_float("LOZ_LLM_DAILY_USD_CAP", 2.00),
+        )
+
+    filtered = {
+        "stale": sum(1 for item in stories if not passes_hard_gates(item, now, window)),
+        "off-mandate": sum(
+            1 for item in stories
+            if passes_hard_gates(item, now, window) and not candidate(item, now, window)
+        ),
+    }
+    document = compose(
+        clusters, analysis, mode=mode, slot=None, now=now,
+        degraded="" if reason in ("ok", "partial_analysis", "off") else reason,
+        filtered=filtered,
+    )
+    subject, text_body, html_body = render_mod.render(document)
+    subject = f"[PREVIEW] {subject}"
+
+    to = gmail.ops_recipients()
+    sent = False
+    if to:
+        gmail.send(subject, text_body, html_body, to=to, cc=[])
+        sent = True
+    return {
+        "mode": mode,
+        "preview": True,
+        "sources_seen": len(stories),
+        "stories": len(clusters),
+        "analysis": reason,
+        "analyst_model": analysis.model if analysis else "",
+        "sent": sent,
+        "recipients": len(to),
+        "source_errors": source_errors,
+        "titles": [cluster.leader.title for cluster in clusters],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Lozatron email briefings")
     parser.add_argument("--mode", choices=("briefing", "breaking"), default="briefing")
@@ -282,6 +343,8 @@ def main() -> int:
     parser.add_argument("--verify-credentials", action="store_true")
     parser.add_argument("--no-slot-gate", action="store_true",
                         help="Deliver regardless of the Eastern slot ledger")
+    parser.add_argument("--preview", action="store_true",
+                        help="Render a real brief and send it to the ops address only")
     parser.add_argument("--cost-report", action="store_true",
                         help="Email the weekly Apify spend report to the ops address")
     parser.add_argument("--compare", action="store_true",
@@ -317,6 +380,22 @@ def main() -> int:
                     f"- Emailed: {sent}\n"
                 )
         if not to:
+            print("::warning title=No ops recipients::Set LOZ_OPS_EMAILS or LOZ_CC_EMAILS.")
+        return 0
+
+    if args.preview:
+        result = preview(args.mode, args.state)
+        print(json.dumps(result, indent=2, default=str))
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as handle:
+                handle.write(
+                    f"## Lozatron preview ({args.mode})\n\n"
+                    f"- Stories: {result['stories']}\n"
+                    f"- Analyst: {result['analysis']} {result['analyst_model']}\n"
+                    f"- Sent to ops: {result['sent']} ({result['recipients']} recipient(s))\n"
+                )
+        if not result["recipients"]:
             print("::warning title=No ops recipients::Set LOZ_OPS_EMAILS or LOZ_CC_EMAILS.")
         return 0
 
