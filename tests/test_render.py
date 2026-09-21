@@ -88,11 +88,39 @@ def test_shape_check_rejects_event_handlers():
         assert_render_shape('<html><body><h2 onclick="x()">t</h2></body></html>', 1)
 
 
-def test_every_story_url_appears_exactly_once():
+def test_every_story_has_exactly_two_ways_to_open_it():
+    """The headline link and the named read link. Two affordances, no more.
+
+    A third copy of the URL would mean a duplicate story block rather than a
+    deliberate second affordance, so the count is pinned rather than bounded.
+    """
     rows = [entry(), entry(title="Second story about creator deals", url="https://deadline.com/b")]
     markup = render_html(brief(rows))
     for row in rows:
-        assert markup.count(row.url) == 1
+        assert markup.count(row.url) == 2
+
+
+def test_links_announce_that_they_are_clickable():
+    from lozatron.render import LINK
+    markup = render_html(brief())
+    assert markup.count("text-decoration:underline") >= 2
+    assert LINK in markup
+    assert "text-decoration:none" not in markup
+
+
+def test_read_link_names_its_destination():
+    markup = render_html(brief([entry(outlets=["Deadline"])]))
+    assert "Read on Deadline" in markup
+
+
+def test_masthead_carries_the_product_name_and_a_story_count():
+    markup = render_html(brief([entry(), entry(title="Second creator deal story")]))
+    assert "Lozatron" in markup
+    assert "2 stories" in markup
+
+
+def test_story_count_is_not_pluralised_at_one():
+    assert "1 story" in render_html(brief([entry()]))
 
 
 def test_unanalysed_entry_falls_back_to_the_summary():
@@ -192,3 +220,13 @@ def test_full_render_carries_no_literal_entities():
     assert "&#8217;" not in markup
     assert "&#8230;" not in markup
     assert "Patreon’s new tier launched" in markup
+
+
+def test_decision_index_is_one_line_not_a_repeat():
+    """Sitting directly above its own story, a full headline reads as a bug."""
+    long_title = ("'Hot Ones' Producer First We Feast Sets New Series "
+                  "'Hot Ones: Game Night' Hosted by Joe Santagato (EXCLUSIVE)")
+    markup = render_html(brief([entry(title=long_title, needs_decision=True)]))
+    assert "…" in markup
+    # The full headline appears once, in the story itself, not twice.
+    assert markup.count("Joe Santagato") == 1

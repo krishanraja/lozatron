@@ -23,9 +23,9 @@ CREATOR_TERMS = (
 )
 
 BUSINESS_TERMS = (
-    "deal", "partner", "partnership", "acqui", "fund", "launch", "brand",
-    "sponsor", "collab", "invest", "contract", "exclusive",
-    "revenue", "monetiz", "marketplace", "platform", "payout", "affiliate",
+    "deal", "partner*", "partnership", "acqui*", "fund*", "launch", "brand",
+    "sponsor*", "collab", "invest*", "contract", "exclusive",
+    "revenue", "monetiz*", "monetis*", "marketplace", "platform", "payout", "affiliate",
     "commerce", "licensing", "agency", "talent", "ceo", "cmo", "hired",
     "sold", "raised", "advertising", "subscription", "storefront",
 )
@@ -62,6 +62,27 @@ def clean_feed_text(value: str, limit: int = 600) -> str:
         text = html.unescape(text)
     text = _RSS_TRUNCATION.sub("", re.sub(r"\s+", " ", text).strip())
     return text[:limit].strip()
+
+
+def term_matcher(terms: tuple[str, ...]) -> re.Pattern[str]:
+    """Compile vocabulary into a word-boundary matcher.
+
+    Plain `in` matching is why a laptop review reached the brief: "kick" (the
+    streaming platform) matched "kickstand", and "partner" matched a hardware
+    partnership. The same flaw let "book" match "Read My Book" and "tour" match
+    "tourism".
+
+    A term ending in `*` keeps prefix matching, which several deliberately need
+    ("monetiz*", "monetis*" has to catch monetize, monetise and monetization). Everything
+    else must match as a whole word.
+    """
+    parts = []
+    for term in terms:
+        if term.endswith("*"):
+            parts.append(re.escape(term[:-1]))
+        else:
+            parts.append(re.escape(term) + r"\b")
+    return re.compile(r"\b(?:" + "|".join(parts) + ")", re.IGNORECASE)
 
 
 def env_text(name: str, default: str = "") -> str:
@@ -218,11 +239,11 @@ class Story:
 DOMAIN_TERMS = (
     "creator", "creators", "influencer", "influencers", "ugc", "streamer", "streaming",
     "youtube", "tiktok", "instagram", "snapchat", "twitch", "kick", "substack",
-    "patreon", "spotify", "podcast", "podcaster", "newsletter", "shorts", "reels",
-    "subscriber", "subscription", "monetiz", "sponsorship", "brand deal", "creator fund",
+    "patreon", "spotify", "podcast*", "podcaster", "newsletter", "shorts", "reels",
+    "subscriber", "subscription", "monetiz*", "monetis*", "sponsorship", "brand deal", "creator fund",
     "talent agency", "mcn", "fan", "audience", "social video", "short-form",
     "roblox", "discord", "onlyfans", "beehiiv", "linktree", "gumroad", "whatnot",
-    "social media", "digital media", "advertis", "affiliate", "merch", "storefront",
+    "social media", "digital media", "advertis*", "affiliate", "merch", "storefront",
     # Rule 7, from a named past miss: sports, fitness and lifestyle creator
     # brands, creator-led leagues and event/IP expansions are creator-business
     # stories. Filing them as sport is how Good Good Golf was dropped.
@@ -234,6 +255,24 @@ DOMAIN_TERMS = (
 # crisis encoded: a rule that lives in prompt text is not a rule.
 JUNK_TITLE = re.compile(r"\btop\s+\d+\b")
 JUNK_PHRASES = ("internship", "job opening", "apply now")
+
+
+_DOMAIN = None
+_BUSINESS = None
+_SOFT = None
+_STRONG = None
+_CREATOR = None
+
+
+def _matchers():
+    global _DOMAIN, _BUSINESS, _SOFT, _STRONG, _CREATOR
+    if _DOMAIN is None:
+        _DOMAIN = term_matcher(DOMAIN_TERMS)
+        _BUSINESS = term_matcher(BUSINESS_TERMS)
+        _SOFT = term_matcher(SOFT_PATTERNS)
+        _STRONG = term_matcher(STRONG_TERMS)
+        _CREATOR = term_matcher(CREATOR_TERMS)
+    return _DOMAIN, _BUSINESS, _SOFT, _STRONG, _CREATOR
 
 
 def passes_hard_gates(story: Story, now: dt.datetime, window_hours: int) -> bool:
@@ -265,8 +304,8 @@ def candidate(story: Story, now: dt.datetime, window_hours: int) -> bool:
         return False
     if story.tier == "primary":
         return True
-    text = f"{story.title} {story.summary}".lower()
-    return any(term in text for term in DOMAIN_TERMS)
+    domain, _, _, _, _ = _matchers()
+    return bool(domain.search(f"{story.title} {story.summary}"))
 
 
 def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
@@ -303,8 +342,9 @@ def rank(story: Story, now: dt.datetime) -> int:
     text = f"{story.title} {story.summary}".lower()
     age = max(0.0, (now - story.published_at).total_seconds() / 3600)
     score = 12 if age <= 3 else 9 if age <= 8 else 5 if age <= 24 else 1
-    score += sum(2 for term in STRONG_TERMS if term in text)
-    score += 1 if any(term in text for term in ("creator", "youtube", "tiktok", "influencer")) else 0
+    _, _, _, strong, _ = _matchers()
+    score += 2 * len(set(strong.findall(text)))
+    score += 1 if re.search(r"\b(creator|youtube|tiktok|influencer)", text, re.I) else 0
     return score
 
 

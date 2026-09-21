@@ -307,3 +307,47 @@ def test_mixed_tier_cluster_counts_as_confirmed():
     cluster = build_clusters(rows)[0]
     assert cluster.confirmed
     assert cluster.tiers == {"community", "trade"}
+
+
+# --- money written two ways is one amount ---
+
+def test_the_same_amount_written_two_ways_normalises():
+    from lozatron.cluster import normalise_money
+    for text in ("$400 Million", "$400M", "400 million", "$400m"):
+        assert "400m" in normalise_money(text).lower().replace(" ", ""), text
+
+
+def test_billions_and_decimals_normalise():
+    from lozatron.cluster import normalise_money
+    assert "1.2b" in normalise_money("a $1.2 billion round").replace(" ", "")
+    assert "275m" in normalise_money("closes a $275 Million deal").replace(" ", "")
+
+
+def test_two_outlets_on_one_ruling_merge_despite_different_wording():
+    """The reported miss: these shipped as two separate stories."""
+    assert merged(
+        "Judge Casts Doubt on TikTok's $400 Million Privacy Deal, Threatens to Keep Court Oversight Alive",
+        "U.S. Judge Signals Rejection of Key Piece in TikTok's $400M Privacy Settlement",
+    )
+
+
+def test_anchor_merge_needs_both_a_name_and_a_figure():
+    """One shared company alone is not enough to call it the same event."""
+    assert not merged(
+        "TikTok launches a new shopping storefront for creators",
+        "TikTok appoints a new head of creator partnerships",
+    )
+
+
+def test_different_companies_with_different_amounts_stay_apart():
+    assert not merged(
+        "Beehiiv raises $12M Series A funding round",
+        "Substack raises $65M Series B funding round",
+    )
+
+
+def test_same_company_different_amounts_stay_apart():
+    assert not merged(
+        "Patreon closes a $50 million funding round",
+        "Patreon closes a $220 million acquisition",
+    )

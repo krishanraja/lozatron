@@ -29,6 +29,7 @@ PAPER = "#faf8f5"
 MUTED = "#6b7075"
 RULE = "#e4e0da"
 ANSWER = "#1f6f5c"     # why it matters: the thing she is reading for
+LINK = "#1b5e8c"       # only ever used for something you can click
 FLAG = "#8a5a12"       # needs a decision, or low confidence
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
 MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace"
@@ -110,6 +111,17 @@ def _heading(local: dt.datetime, mode: str, slot: str | None) -> str:
     return {9: "Morning brief", 14: "Afternoon brief", 18: "Evening brief"}.get(hour, "Brief")
 
 
+def _clip(value: str, limit: int) -> str:
+    """One-line form with an ellipsis, so an index cannot read as a repeat."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0] + "\u2026"
+
+
+def _count(brief: Brief) -> str:
+    total = len(brief.entries)
+    return "1 story" if total == 1 else f"{total} stories"
+
+
 def subject(brief: Brief) -> str:
     local = brief.generated_at.astimezone(EASTERN)
     return f"Lozatron | {_heading(local, brief.mode, brief.slot)} | {local:%a %-d %b}"
@@ -189,8 +201,15 @@ def _story(entry: Entry, index: int) -> str:
         f'<p style="margin:0 0 6px;font-family:{MONO};font-size:12px;letter-spacing:.04em;'
         f'color:{MUTED};">{index:02d} &middot; {meta}</p>'
         f'<h2 style="margin:0 0 10px;font-size:19px;line-height:1.3;font-weight:600;color:{INK};">'
-        f'<a href="{_t(entry.url, 900)}" style="color:{INK};text-decoration:none;">{_t(entry.title, 300)}</a></h2>'
+        f'<a href="{_t(entry.url, 900)}" style="color:{LINK};text-decoration:underline;'
+        f'text-underline-offset:3px;">{_t(entry.title, 300)}</a></h2>'
         + "".join(body) +
+        # A second, unmissable affordance. The headline being a link is easy to
+        # miss on a phone; a named destination is not.
+        f'<p style="margin:14px 0 0;font-size:14px;line-height:1.4;">'
+        f'<a href="{_t(entry.url, 900)}" style="color:{LINK};text-decoration:underline;'
+        f'text-underline-offset:3px;font-weight:600;">Read on {_t(entry.outlets[0] if entry.outlets else "source", 40)}'
+        f' &rarr;</a></p>'
         f'</td></tr></tbody></table></td></tr>'
     )
 
@@ -220,7 +239,7 @@ def render_html(brief: Brief) -> str:
         items = "".join(
             f'<p style="margin:0 0 6px;font-size:15px;line-height:1.45;color:{INK};">'
             f'<span style="font-family:{MONO};font-size:12px;color:{FLAG};">'
-            f'{positions[id(entry)]:02d}</span>&nbsp;&nbsp;{_t(entry.title, 110)}</p>'
+            f'{positions[id(entry)]:02d}</span>&nbsp;&nbsp;{_t(_clip(entry.title, 64))}</p>'
             for entry in brief.decisions
         )
         rows.append(
@@ -258,11 +277,18 @@ def render_html(brief: Brief) -> str:
         f'style="max-width:600px;width:100%;"><tbody><tr>'
         f'<td class="wrap" style="padding:40px 32px 44px;font-family:{SANS};">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tbody>'
-        f'<tr><td style="padding:0 0 30px;">'
-        f'<h1 style="margin:0 0 4px;font-size:15px;font-weight:600;letter-spacing:.02em;color:{INK};">'
-        f'{_t(_heading(local, brief.mode, brief.slot))}</h1>'
-        f'<p style="margin:0;font-family:{MONO};font-size:12px;color:{MUTED};">'
-        f'{local:%A %-d %B} &middot; {local:%-I:%M%p} ET</p></td></tr>'
+        # Masthead. It should read like a named publication she subscribes to,
+        # not like an automated alert, so the product name sits above the
+        # edition and the rule under it closes the block.
+        f'<tr><td style="padding:0 0 26px;">'
+        f'<p style="margin:0 0 16px;font-family:{MONO};font-size:11px;letter-spacing:.24em;'
+        f'text-transform:uppercase;color:{MUTED};">Lozatron</p>'
+        f'<h1 style="margin:0 0 12px;font-size:30px;line-height:1.12;font-weight:600;'
+        f'letter-spacing:-.015em;color:{INK};">{_t(_heading(local, brief.mode, brief.slot))}</h1>'
+        f'<p style="margin:0 0 22px;font-family:{MONO};font-size:12px;color:{MUTED};">'
+        f'{local:%A %-d %B} &middot; {local:%-I:%M%p} ET &middot; {_count(brief)}</p>'
+        f'<div style="height:2px;background:{INK};line-height:2px;font-size:0;">&nbsp;</div>'
+        f'</td></tr>'
         + "".join(rows) +
         '</tbody></table></td></tr></tbody></table></td></tr></tbody></table></body></html>'
     )

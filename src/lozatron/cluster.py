@@ -57,12 +57,30 @@ linktree beehiiv ghost gumroad cameo whatnot fanfix onlyfans
 """.split())
 
 MONEY = re.compile(r"^\$?\d[\d,.]*[mbk]?$", re.IGNORECASE)
+# "$400 Million" and "$400M" are the same amount written two ways. Left
+# unnormalised they tokenise as {400, million} and {400m}, share no anchor, and
+# two outlets covering one ruling ship as two stories.
+MONEY_SCALE = {"million": "m", "billion": "b", "thousand": "k", "m": "m", "bn": "b", "b": "b", "k": "k"}
+MONEY_PHRASE = re.compile(
+    r"\$?\s*(\d[\d,]*(?:\.\d+)?)\s*(million|billion|thousand|bn|[mbk])\b", re.IGNORECASE
+)
+
+
+def normalise_money(title: str) -> str:
+    """Rewrite every amount into one canonical token, e.g. `400m`."""
+    def swap(match: re.Match[str]) -> str:
+        number = match.group(1).replace(",", "").rstrip(".")
+        if number.endswith(".0"):
+            number = number[:-2]
+        return f" {number}{MONEY_SCALE[match.group(2).lower()]} "
+    return MONEY_PHRASE.sub(swap, title)
 # " - Variety", " | Deadline", " — The Hollywood Reporter"
 PUBLISHER_TAIL = re.compile(r"\s*[|–—-]\s*[A-Z][\w .&'’]{2,30}$")
 WORD = re.compile(r"[^\W_]+", re.UNICODE)
 
 MERGE_ANCHORED = 72     # similar enough, and the proper nouns agree
 MERGE_IDENTICAL = 88    # near-identical wire copy, no anchors needed
+MERGE_BY_ANCHOR = 28    # different words, same company and same amount
 
 # "Fewer strong stories is better than a full list with weak/stale items.
 # Thin-flow honesty beats filler." Widening the relevance gate to hit the 7-10
@@ -88,7 +106,7 @@ def canon_tokens(title: str) -> tuple[frozenset[str], frozenset[str]]:
     merge into one entry badged as two independent sources -- a correctness
     failure that reads like a feature. Differing anchors block that.
     """
-    stripped = PUBLISHER_TAIL.sub("", title.strip())
+    stripped = normalise_money(PUBLISHER_TAIL.sub("", title.strip()))
     normalized = unicodedata.normalize("NFKD", stripped)
     raw = WORD.findall(normalized)
     title_case = sum(1 for word in raw if word[:1].isupper()) > max(1, len(raw) * 6 // 10)
@@ -135,8 +153,21 @@ def similarity(a: frozenset[str], b: frozenset[str]) -> int:
     return max(jaccard, containment, grams)
 
 
+def _hard(anchors: frozenset[str]) -> frozenset[str]:
+    """Anchors that are amounts or numbers: the least coincidental kind."""
+    return frozenset(a for a in anchors if MONEY.match(a) or any(ch.isdigit() for ch in a))
+
+
 def should_merge(score: int, anchors_a: frozenset[str], anchors_b: frozenset[str]) -> bool:
     if score >= MERGE_IDENTICAL:
+        return True
+    # Two outlets can describe one event in almost no shared words. "Judge Casts
+    # Doubt on TikTok's $400 Million Privacy Deal" and "U.S. Judge Signals
+    # Rejection of Key Piece in TikTok's $400M Privacy Settlement" overlap on
+    # barely a fifth of their tokens. What they do share is the company and the
+    # amount, and a named company plus a specific figure is not a coincidence.
+    shared = anchors_a & anchors_b
+    if len(shared) >= 2 and _hard(shared) and score >= MERGE_BY_ANCHOR:
         return True
     if score < MERGE_ANCHORED:
         return False
