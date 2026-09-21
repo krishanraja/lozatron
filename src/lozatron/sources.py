@@ -11,6 +11,10 @@ from typing import Iterable
 from . import http
 from .core import Story, parse_datetime, utcnow
 
+# Trade publications. Lauren's rule: these CONFIRM a story, they are not the
+# discovery layer. Every URL here was fetched and parsed before being added;
+# Marketing Brew, Ad Age, PR Newswire and Business Wire were all in the historical
+# configuration and are all dead or wrong, which is why nothing goes in unprobed.
 FEEDS = (
     ("Tubefilter", "https://www.tubefilter.com/feed/"),
     ("Deadline", "https://deadline.com/feed/"),
@@ -24,6 +28,50 @@ FEEDS = (
     ("Passionfruit", "https://passionfru.it/feed/"),
     ("YouTube Blog", "https://blog.youtube/rss/"),
     ("Spotify Newsroom", "https://newsroom.spotify.com/feed/"),
+    ("Adweek", "https://www.adweek.com/feed/"),
+    ("Social Media Today", "https://www.socialmediatoday.com/feeds/news/"),
+    ("Influencer Marketing Hub", "https://influencermarketinghub.com/feed/"),
+    ("Kajabi", "https://kajabi.com/blog/rss.xml"),
+)
+
+# Primary sources: the creator, platform or agency announcing it themselves.
+# "Creator news breaks on social media BEFORE it hits trade publications."
+# YouTube publishes a free RSS feed per channel, so the layer Lauren asked for
+# first costs nothing. Paid scraping is an escalation on top, not the mechanism.
+YOUTUBE_CHANNELS = (
+    ("MrBeast", "UCX6OQ3DkcsbYNE6H8uQQuVA"),
+    ("KSI", "UCVtFOytbRpEvzLjvqGG5gxQ"),
+    ("Sidemen", "UCo8bcnLyZH8tBIH9V1mLgqQ"),
+    ("Markiplier", "UC7_YxT-KID8kRbqZo7MyscQ"),
+    ("Colin and Samir", "UCwayCyXbToTPxYJUBcEx74g"),
+    ("MKBHD", "UCG7J20LhUeLl6y_Emi7OJrA"),
+    ("Emma Chamberlain", "UCJvR4zNAPRJoMDF3A912dBA"),
+    ("Dude Perfect", "UCJrWyyCRROi8NlQ6Xd9dx5Q"),
+    ("Rhett and Link", "UC4PooiX37Pld1T8J5SYT-SQ"),
+    ("Alix Earle", "UCT_CSXR_a20b1_fR6VMjp_A"),
+    ("Tinx", "UCd-WxxEal6fupgs-nbJJz3Q"),
+    ("Doctor Mike", "UC0QHWhjbe5fGJEPz3sVb6nw"),
+    ("Hank Green", "UC_dvqFmaVUj16kRKSLYBaSw"),
+)
+
+# Reddit is signal, not proof. These are ingested, but a story that appears ONLY
+# on Reddit is never delivered on its own -- it has to be corroborated by a
+# primary or trade source first.
+SUBREDDITS = (
+    "youtube", "creators", "NewTubers", "BestOfYouTube", "LivestreamFail",
+    "PublicFigures", "CreatorEconomy", "PartneredYoutube", "InfluencerMarketing",
+    "Substack",
+)
+
+# A creator uploading "I SIGNED WITH NETFLIX" is the signal; the rest of their
+# upload schedule is not. Without this, thirteen channels of routine uploads
+# drown the candidate pool.
+PRIMARY_BUSINESS_TERMS = (
+    "deal", "partner", "sign", "acqui", "fund", "launch", "brand", "sponsor",
+    "studio", "series", "film", "podcast", "collab", "compan", "invest",
+    "contract", "exclusive", "netflix", "amazon", "spotify", "hulu", "apple",
+    "disney", "million", "billion", "announce", "new venture", "merch", "tour",
+    "book", "raise", "equity", "stake", "acquisition", "ceo", "hire",
 )
 
 NEWS_QUERIES = (
@@ -35,6 +83,7 @@ NEWS_QUERIES = (
 # Podnews alone ships ~2.3 MB, and the previous 2 MB cap truncated it mid-XML
 # on every run, which surfaced only as an opaque ParseError.
 FEED_READ_LIMIT = 12_000_000
+YOUTUBE_FEED = "https://www.youtube.com/feeds/videos.xml?channel_id="
 
 
 def _fetch(url: str, *, timeout: int = 20) -> bytes:
@@ -67,23 +116,60 @@ def _first(node: ET.Element, names: Iterable[str]) -> ET.Element | None:
     return None
 
 
+def _parse_feed(source: str, url: str, current: dt.datetime, tier: str,
+                limit: int = 40) -> list[Story]:
+    root = ET.fromstring(_fetch(url))
+    entries = [node for node in root.iter()
+               if node.tag.rsplit("}", 1)[-1].lower() in {"item", "entry"}]
+    out: list[Story] = []
+    for entry in entries[:limit]:
+        title = _text(_first(entry, ("title",)))
+        summary = _text(_first(entry, ("description", "summary", "content")))
+        date_text = _text(_first(entry, ("published", "pubdate", "date", "updated")))
+        published = parse_datetime(date_text)
+        link_node = _first(entry, ("link",))
+        link = "" if link_node is None else (link_node.attrib.get("href") or _text(link_node))
+        if title and link and published and published <= current + dt.timedelta(hours=1):
+            out.append(Story(title=title, url=link, source=source,
+                             published_at=published, summary=summary, tier=tier))
+    return out
+
+
+def primary_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[str]]:
+    """Creator channels and community chatter. Free, and Lauren's first priority."""
+    current = now or utcnow()
+    rows: list[Story] = []
+    errors: list[str] = []
+
+    for name, channel_id in YOUTUBE_CHANNELS:
+        try:
+            found = _parse_feed(name, f"{YOUTUBE_FEED}{channel_id}", current, "primary", limit=15)
+            # An upload title only counts when it announces business.
+            rows.extend(
+                item for item in found
+                if any(term in item.title.lower() for term in PRIMARY_BUSINESS_TERMS)
+            )
+        except Exception as exc:
+            errors.append(f"YouTube/{name}: {type(exc).__name__}")
+
+    for sub in SUBREDDITS:
+        try:
+            rows.extend(_parse_feed(f"r/{sub}", f"https://www.reddit.com/r/{sub}/new/.rss",
+                                    current, "community", limit=25))
+        except Exception as exc:
+            # Reddit throttles datacenter IPs hard; a 429 is expected and is not
+            # a failure of the run.
+            errors.append(f"Reddit/{sub}: {type(exc).__name__}")
+    return rows, errors
+
+
 def rss_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[str]]:
     current = now or utcnow()
     rows: list[Story] = []
     errors: list[str] = []
     for source, url in FEEDS:
         try:
-            root = ET.fromstring(_fetch(url))
-            entries = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1].lower() in {"item", "entry"}]
-            for entry in entries[:40]:
-                title = _text(_first(entry, ("title",)))
-                summary = _text(_first(entry, ("description", "summary", "content")))
-                date_text = _text(_first(entry, ("published", "pubdate", "date", "updated")))
-                published = parse_datetime(date_text)
-                link_node = _first(entry, ("link",))
-                link = "" if link_node is None else (link_node.attrib.get("href") or _text(link_node))
-                if title and link and published and published <= current + dt.timedelta(hours=1):
-                    rows.append(Story(title=title, url=link, source=source, published_at=published, summary=summary))
+            rows.extend(_parse_feed(source, url, current, "trade"))
         except Exception as exc:
             errors.append(f"{source}: {type(exc).__name__}")
     return rows, errors
@@ -123,7 +209,10 @@ def newsapi_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[s
 
 
 def collect(now: dt.datetime | None = None) -> tuple[list[Story], list[str]]:
+    """Primary first, then trade as the confirmation layer, then NewsAPI."""
+    primary_rows, primary_errors = primary_stories(now)
     rss_rows, rss_errors = rss_stories(now)
     news_rows, news_errors = newsapi_stories(now)
-    return rss_rows + news_rows, rss_errors + news_errors
+    return (primary_rows + rss_rows + news_rows,
+            primary_errors + rss_errors + news_errors)
 

@@ -8,7 +8,12 @@ Production status: live on GitHub Actions since 2026-09-20. Telegram delivery is
 
 - Briefings at 09:00, 14:00 and 18:00 in `America/New_York`.
 - Breaking-news checks every 90 minutes.
-- RSS discovery by default, with NewsAPI and guarded Apify sources when enabled.
+- Primary-first discovery: 13 creator YouTube channel feeds and 10 subreddits,
+  then 16 trade publications as the confirmation layer, then NewsAPI.
+- Reddit is signal, never proof: a story appearing only in community chatter is
+  not delivered until a primary or trade source corroborates it.
+- A creator's own announcement outranks a trade write-up of the same event.
+- At most two stories per outlet per edition.
 - Deterministic freshness, mandate and duplicate gates.
 - Gmail delivery only after tests and credential verification pass.
 - Delivery state committed only after Gmail returns a message id.

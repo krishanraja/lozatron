@@ -90,13 +90,17 @@ def test_hard_gates_reject_listicles_and_job_ads():
     assert not passes_hard_gates(story("Creator marketing internship open", 2), NOW, 48)
 
 
-def test_candidate_admits_on_topic_stories_the_strict_gate_drops():
-    """The strict tuple matches `creators` plural only, so this was invisible."""
+def test_on_topic_story_the_old_plural_rule_dropped_now_passes():
+    """The old tuple matched `creators` plural only, so this was invisible.
+
+    Both gates now admit it: the wide one for the analyst path, and the strict
+    one since it was rewritten from Lauren's rule 4.
+    """
     from lozatron.core import candidate
     row = story("YouTube debuts Canadian creator shows and shopping tools", 2)
-    row.summary = "The platform expands its creator programme in Canada."
+    row.summary = "The platform launches a creator monetization programme in Canada."
     assert candidate(row, NOW, 48)
-    assert not select_stories([row], set(), now=NOW, window_hours=48, limit=10)
+    assert select_stories([row], set(), now=NOW, window_hours=48, limit=10)
 
 
 def test_candidate_still_excludes_plainly_off_domain_material():

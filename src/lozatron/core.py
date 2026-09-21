@@ -190,6 +190,10 @@ class Story:
     published_at: dt.datetime
     summary: str = ""
     score: int = 0
+    # "primary" = the creator, platform or agency said it themselves.
+    # "community" = Reddit chatter: signal, never proof on its own.
+    # "trade" = a publication reporting it.
+    tier: str = "trade"
 
     @property
     def key(self) -> str:
@@ -203,6 +207,7 @@ class Story:
             "published_at": self.published_at.isoformat(),
             "summary": self.summary,
             "score": self.score,
+            "tier": self.tier,
         }
 
 
@@ -218,6 +223,11 @@ DOMAIN_TERMS = (
     "talent agency", "mcn", "fan", "audience", "social video", "short-form",
     "roblox", "discord", "onlyfans", "beehiiv", "linktree", "gumroad", "whatnot",
     "social media", "digital media", "advertis", "affiliate", "merch", "storefront",
+    # Rule 7, from a named past miss: sports, fitness and lifestyle creator
+    # brands, creator-led leagues and event/IP expansions are creator-business
+    # stories. Filing them as sport is how Good Good Golf was dropped.
+    "creator-led", "league", "tour", "golf", "fitness", "wellness", "esports",
+    "team owner", "franchise", "live event", "festival", "residency",
 )
 
 # Freshness is arithmetic and stays in code, always. This is the June 2026
@@ -244,32 +254,45 @@ def candidate(story: Story, now: dt.datetime, window_hours: int) -> bool:
     domain at all and is worth the tokens to score. Code still applies the
     relevance threshold and the limit afterwards, so the model can never add a
     story that failed a hard gate and never decides how many ship.
+
+    Primary sources skip the vocabulary check. A creator announcing their own
+    Netflix deal does not say the word "creator", and requiring it filtered out
+    every single primary signal -- the layer Lauren ranks first. Those items
+    already passed a business-term filter at ingest, which is the check that
+    belongs to them.
     """
     if not passes_hard_gates(story, now, window_hours):
         return False
+    if story.tier == "primary":
+        return True
     text = f"{story.title} {story.summary}".lower()
     return any(term in text for term in DOMAIN_TERMS)
 
 
 def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
-    """The strict deterministic gate. Unchanged.
+    """The deterministic relevance gate, written from Lauren's rule 4.
 
-    This remains the selection path whenever the analyst is off or degraded, so
-    a provider outage makes the brief narrower rather than flooding Lauren with
-    unscored material. It is the floor, not the ceiling.
+    Include deals, funding, acquisitions, platform economics, monetization,
+    creator-company launches, agencies, talent contracts, regulation with
+    commercial impact and major brand partnerships. Reject generic interviews,
+    culture commentary, routine tips, listicles and profiles unless there is a
+    fresh business event.
+
+    The topic half uses the wide DOMAIN_TERMS rather than the old 22-phrase
+    CREATOR_TERMS tuple, which was rejecting 38% of everything fresh on a
+    singular-versus-plural technicality. The business half stays mandatory,
+    which is what keeps the widening from turning into noise.
     """
-    text = f"{story.title} {story.summary}".lower()
-    title = story.title.lower()
-    age = (now - story.published_at).total_seconds() / 3600
-    if age < -1 or age > window_hours:
+    if not passes_hard_gates(story, now, window_hours):
         return False
-    has_creator_context = any(term in text for term in CREATOR_TERMS)
-    has_creator_plural = re.search(r"(?<![a-z])creators(?![a-z])", text) is not None
-    if not (has_creator_context or has_creator_plural):
+    text = f"{story.title} {story.summary}".lower()
+    # A creator's own announcement is already business-filtered at ingest and
+    # does not have to say the word "creator" to be creator news.
+    if story.tier == "primary":
+        return True
+    if not any(term in text for term in DOMAIN_TERMS):
         return False
     if not any(term in text for term in BUSINESS_TERMS):
-        return False
-    if re.search(r"\btop\s+\d+\b", title) or any(term in title for term in ("internship", "job opening", "apply now")):
         return False
     if any(term in text for term in SOFT_PATTERNS) and not any(term in text for term in STRONG_TERMS):
         return False

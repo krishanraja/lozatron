@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import os
 import re
 import unicodedata
 
@@ -62,6 +63,13 @@ WORD = re.compile(r"[^\W_]+", re.UNICODE)
 
 MERGE_ANCHORED = 72     # similar enough, and the proper nouns agree
 MERGE_IDENTICAL = 88    # near-identical wire copy, no anchors needed
+
+# "Fewer strong stories is better than a full list with weak/stale items.
+# Thin-flow honesty beats filler." Widening the relevance gate to hit the 7-10
+# target pulled in a tail of weak matches -- a laptop launch, a naval
+# procurement list -- so a floor keeps the tail out. A quiet day now produces a
+# short brief rather than a padded one, and an empty briefing sends nothing.
+MIN_SCORE = 8
 
 
 def _stem(token: str) -> str:
@@ -175,6 +183,26 @@ class Cluster:
         """Independent outlets carrying this story. The honest confidence signal."""
         return len(self.outlets)
 
+    @property
+    def tiers(self) -> set[str]:
+        return {story.tier for story in self.members}
+
+    @property
+    def confirmed(self) -> bool:
+        """Reddit is signal, never proof.
+
+        Lauren's rule: use Reddit to discover chatter, then confirm via a trade,
+        primary or direct source before including. So a cluster whose every
+        member is community chatter is not deliverable. Left unenforced, the
+        subreddits flood the pool with tech-support questions, beginner advice
+        and streamer drama, which is exactly what it produced when measured.
+        """
+        return self.tiers != {"community"}
+
+    @property
+    def primary(self) -> bool:
+        return "primary" in self.tiers
+
     def member_keys(self) -> list[str]:
         return [story.key for story in self.members]
 
@@ -218,10 +246,37 @@ def select_clusters(
     fresh = [story for story in stories if eligible(story, now, window_hours)]
     clusters = [
         cluster for cluster in build_clusters(fresh)
-        if not any(delivered(member) for member in cluster.members)
+        if cluster.confirmed and not any(delivered(member) for member in cluster.members)
     ]
     for cluster in clusters:
         cluster.score = rank(cluster.leader, now)
+        # A creator announcing their own deal outranks a trade write-up of the
+        # same deal. Lauren's triage rule, +3.
+        if cluster.primary:
+            cluster.score += 3
         cluster.age_hours = max(0, round((now - cluster.leader.published_at).total_seconds() / 3600))
+    floor = int(os.environ.get("LOZ_MIN_SCORE") or MIN_SCORE)
+    clusters = [cluster for cluster in clusters if cluster.score >= floor]
     clusters.sort(key=lambda c: (-c.score, -c.corroboration, -c.leader.published_at.timestamp()))
-    return clusters[:limit]
+    return cap_per_source(clusters, limit)
+
+
+def cap_per_source(clusters: list[Cluster], limit: int, per_source: int = 2) -> list[Cluster]:
+    """Stop one outlet taking the whole brief.
+
+    The live email Krish flagged was three NetInfluencer stories in a row, and
+    the historical telemetry shows the same skew: NetInfluencer delivered 16 of
+    61, more than triple any other source. Applied after ranking, so it removes
+    the third story from an outlet rather than reordering anything.
+    """
+    seen: dict[str, int] = {}
+    kept: list[Cluster] = []
+    for cluster in clusters:
+        source = cluster.leader.source
+        if seen.get(source, 0) >= per_source:
+            continue
+        seen[source] = seen.get(source, 0) + 1
+        kept.append(cluster)
+        if len(kept) >= limit:
+            break
+    return kept

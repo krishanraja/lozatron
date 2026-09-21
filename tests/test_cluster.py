@@ -229,3 +229,81 @@ def test_select_clusters_applies_the_eligibility_gates():
     junk = story("Top 10 influencer marketing platforms", "A", minutes=10)
     chosen = select_clusters([junk], lambda s: False, now=NOW, window_hours=48, limit=10)
     assert chosen == []
+
+
+# --- Lauren's sourcing rules, encoded ---
+
+def tiered(title, tier, source="Test", minutes=0):
+    row = story(title, source, minutes=minutes)
+    row.tier = tier
+    return row
+
+
+def test_reddit_only_story_is_never_delivered():
+    """'Reddit is signal, not proof. Confirm before including.'"""
+    from lozatron.cluster import select_clusters
+    rows = [tiered("Creator signs brand partnership deal", "community", "r/creators")]
+    assert select_clusters(rows, lambda s: False, now=NOW, window_hours=48, limit=10) == []
+
+
+def test_reddit_story_ships_once_a_real_source_corroborates_it():
+    from lozatron.cluster import select_clusters
+    rows = [
+        tiered("Patreon acquires podcast startup Moment", "community", "r/creators", minutes=30),
+        tiered("Patreon Acquires Moment, A Podcast Startup", "trade", "Variety", minutes=20),
+    ]
+    chosen = select_clusters(rows, lambda s: False, now=NOW, window_hours=48, limit=10)
+    assert len(chosen) == 1
+    assert chosen[0].confirmed
+
+
+def test_primary_source_outranks_trade_on_the_same_event():
+    """A creator's own announcement beats a trade write-up of it."""
+    from lozatron.cluster import select_clusters
+    rows = [
+        tiered("Spotify signs exclusive creator podcast deal", "trade", "Variety", minutes=10),
+        tiered("Patreon signs landmark brand partnership", "primary", "MrBeast", minutes=10),
+    ]
+    chosen = select_clusters(rows, lambda s: False, now=NOW, window_hours=48, limit=10)
+    assert chosen[0].primary, "the primary signal must sort first"
+
+
+def test_no_outlet_takes_more_than_two_slots():
+    """The reported email was three NetInfluencer stories in a row."""
+    from lozatron.cluster import select_clusters
+    # Distinct events from one outlet. Near-identical titles would legitimately
+    # cluster into a single entry, which is a different mechanism.
+    titles = [
+        "Patreon acquires podcast startup Moment",
+        "Spotify launches brand partnership programme",
+        "Roblox signs licensing deal with Nike",
+        "Substack raises funding from investors",
+        "Twitch appoints new chief revenue officer",
+    ]
+    rows = [tiered(t, "trade", "NetInfluencer", minutes=n) for n, t in enumerate(titles, 1)]
+    chosen = select_clusters(rows, lambda s: False, now=NOW, window_hours=48, limit=10)
+    assert len(chosen) == 2
+
+
+def test_cap_removes_the_surplus_rather_than_reordering():
+    from lozatron.cluster import cap_per_source
+
+    class Fake:
+        def __init__(self, src, score):
+            self.leader = type("S", (), {"source": src})()
+            self.score = score
+
+    rows = [Fake("A", 9), Fake("A", 8), Fake("B", 7), Fake("A", 6), Fake("C", 5)]
+    kept = cap_per_source(rows, limit=10)
+    assert [c.leader.source for c in kept] == ["A", "A", "B", "C"]
+
+
+def test_mixed_tier_cluster_counts_as_confirmed():
+    from lozatron.cluster import build_clusters
+    rows = [
+        tiered("MrBeast signs landmark deal with Amazon", "community", "r/youtube", minutes=40),
+        tiered("MrBeast Signs Landmark Deal With Amazon Prime", "trade", "Variety", minutes=20),
+    ]
+    cluster = build_clusters(rows)[0]
+    assert cluster.confirmed
+    assert cluster.tiers == {"community", "trade"}
