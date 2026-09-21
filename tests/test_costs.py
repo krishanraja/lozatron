@@ -179,3 +179,49 @@ def test_report_never_addresses_the_brief_recipients(monkeypatch):
     assert gmail.ops_recipients() == ["krish@example.com"]
     monkeypatch.setenv("LOZ_OPS_EMAILS", "ops@example.com")
     assert gmail.ops_recipients() == ["ops@example.com"]
+
+
+# --- the analyst is a paid dependency too ---
+
+def test_llm_spend_is_measured_from_tokens_not_a_flat_estimate(tmp_path, monkeypatch):
+    """The Apify ledger's original defect, not repeated here."""
+    from lozatron.analyst import LlmLedger, estimate_cost
+    monkeypatch.setenv("LOZ_LLM_USD_PER_MTOK_IN", "1.00")
+    monkeypatch.setenv("LOZ_LLM_USD_PER_MTOK_OUT", "10.00")
+    cost = estimate_cost({"prompt_tokens": 1_000_000, "completion_tokens": 100_000})
+    assert cost == pytest.approx(2.00)
+
+    ledger = LlmLedger(tmp_path / "llm.json", "2026-09-21").load()
+    row = ledger.reserve(0.25, "gpt-5")
+    assert ledger.spent() == pytest.approx(0.25), "reservation holds until settled"
+    ledger.settle(row, usd=cost, status="succeeded",
+                  usage={"prompt_tokens": 1_000_000, "completion_tokens": 100_000})
+    assert ledger.spent() == pytest.approx(2.00)
+
+
+def test_missing_token_counts_leave_the_reservation_standing(tmp_path):
+    from lozatron.analyst import estimate_cost
+    assert estimate_cost({}) is None
+    assert estimate_cost({"prompt_tokens": "lots"}) is None
+
+
+def test_llm_monthly_cap_blocks_when_the_day_is_clear(tmp_path):
+    from lozatron.analyst import LlmLedger
+    ledger = LlmLedger(tmp_path / "llm.json", "2026-09-21").load()
+    ledger.rows = [{"date": f"2026-09-{d:02d}", "usd": 4.0} for d in range(1, 11)]
+    assert ledger.spent() == 0.0, "nothing spent today"
+    assert not ledger.permits(0.25, cap_usd=2.00, monthly_cap_usd=40.00)
+
+
+def test_weekly_report_includes_analyst_tokens(tmp_path):
+    from lozatron.analyst import LlmLedger
+    seed(tmp_path / "s.json", [])
+    ledger = LlmLedger(tmp_path / "llm_spend.json", "2026-09-20").load()
+    ledger.settle(ledger.reserve(0.25, "gpt-5"), usd=0.11, status="succeeded",
+                  usage={"prompt_tokens": 6000, "completion_tokens": 2000})
+    report = costs.gather(tmp_path / "s.json", NOW)
+    assert report["llm"]["calls"] == 1
+    assert report["llm"]["input_tokens"] == 6000
+    _, text, html_body = costs.render(report, caps={"daily": 1.0, "monthly": 8.0})
+    assert "analyst" in html_body
+    assert "estimated at the configured" in text

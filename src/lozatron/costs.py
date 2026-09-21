@@ -19,6 +19,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from .analyst import LlmLedger
 from .apify import PROFILES, SpendState
 
 INK = "#14171a"
@@ -57,7 +58,11 @@ def gather(spend_path: Path, now: dt.datetime, days: int = 7) -> dict[str, Any]:
     prior_total, _ = state.spent_between(
         (prior_end - dt.timedelta(days=days - 1)).isoformat(), prior_end.isoformat()
     )
+    llm = LlmLedger(spend_path.parent / "llm_spend.json", end.isoformat()).load().tokens_between(
+        start.isoformat(), end.isoformat()
+    )
     return {
+        "llm": llm,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "total": total,
@@ -91,7 +96,7 @@ def _delta(total: float, prior: float) -> str:
 
 def render(report: dict[str, Any], *, caps: dict[str, float]) -> tuple[str, str, str]:
     total = report["total"]
-    subject = f"Lozatron Apify | ${total:.2f} for the week to {report['end']}"
+    subject = f"Lozatron spend | ${total + (report.get('llm') or {}).get('estimated_usd', 0):.2f} for the week to {report['end']}"
 
     lines = [
         f"Lozatron Apify spend, {report['start']} to {report['end']}",
@@ -109,6 +114,15 @@ def render(report: dict[str, Any], *, caps: dict[str, float]) -> tuple[str, str,
             lines.append(f"  {name:<20} {_plural(bucket['runs'], 'run'):<8} ${bucket['usd']:.2f}"
                          + (f"  ({bucket['failed']} failed)" if bucket["failed"] else ""))
         lines.append("")
+    llm = report.get("llm") or {}
+    if llm.get("calls"):
+        lines += [
+            "  Analyst",
+            f"    {_plural(llm['calls'], 'call'):<10} "
+            f"{llm['input_tokens']:,} in / {llm['output_tokens']:,} out tokens",
+            f"    ~${llm['estimated_usd']:.2f} estimated at the configured token rate",
+            "",
+        ]
     if report["estimated_only"]:
         lines += [f"  {_plural(report['estimated_only'], 'run')} not yet settled by Apify;",
                   "  the reservation is counted instead, so the figure may move.", ""]
@@ -124,6 +138,22 @@ def render(report: dict[str, Any], *, caps: dict[str, float]) -> tuple[str, str,
         f'<tr><td colspan="3" style="padding:6px 0;font-size:14px;color:{MUTED};">'
         f'No paid runs this week.</td></tr>'
     )
+
+    llm_html = ""
+    if llm.get("calls"):
+        llm_html = (
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'style="border-bottom:1px solid {RULE};margin:0 0 20px;"><tbody>'
+            f'<tr><td style="padding:6px 0;font-family:{MONO};font-size:13px;color:{INK};">analyst</td>'
+            f'<td style="padding:6px 0;font-family:{MONO};font-size:13px;color:{MUTED};text-align:right;">'
+            f'{_plural(llm["calls"], "call")}</td>'
+            f'<td style="padding:6px 0;font-family:{MONO};font-size:13px;color:{INK};text-align:right;">'
+            f'~${llm["estimated_usd"]:.2f}</td></tr>'
+            f'<tr><td colspan="3" style="padding:0 0 8px;font-family:{MONO};font-size:11px;color:{MUTED};">'
+            f'{llm["input_tokens"]:,} in / {llm["output_tokens"]:,} out tokens measured; '
+            f'dollars estimated at the configured rate</td></tr>'
+            f'</tbody></table>'
+        )
 
     caveat = ""
     if report["estimated_only"]:
@@ -152,6 +182,7 @@ def render(report: dict[str, Any], *, caps: dict[str, float]) -> tuple[str, str,
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
         f'style="border-top:1px solid {RULE};border-bottom:1px solid {RULE};margin:0 0 20px;">'
         f'<tbody>{rows_html}</tbody></table>'
+        f'{llm_html}'
         f'<p style="margin:0;font-family:{MONO};font-size:12px;line-height:1.7;color:{MUTED};">'
         f'Month to date ${report["month_to_date"]:.2f} of ${caps["monthly"]:.2f}<br>'
         f'Daily cap ${caps["daily"]:.2f} &middot; hard per-run ceiling enforced by Apify<br>'

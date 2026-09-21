@@ -157,6 +157,7 @@ def run(
             clusters, recent,
             ledger=ledger,
             cap_usd=env_float("LOZ_LLM_DAILY_USD_CAP", 2.00),
+            monthly_cap_usd=env_float("LOZ_LLM_MONTHLY_USD_CAP", 40.00),
         )
 
     if analyst_mode == "live" and analysis is not None:
@@ -298,6 +299,7 @@ def preview(mode: str, state_path: Path) -> dict[str, object]:
         analysis, reason = analyst.analyse(
             clusters, [], ledger=ledger,
             cap_usd=env_float("LOZ_LLM_DAILY_USD_CAP", 2.00),
+            monthly_cap_usd=env_float("LOZ_LLM_MONTHLY_USD_CAP", 40.00),
         )
 
     filtered = {

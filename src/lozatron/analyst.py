@@ -36,6 +36,13 @@ ENDPOINT = "https://api.openai.com/v1/chat/completions"
 DEFAULT_MODELS = ("gpt-5", "gpt-4.1", "gpt-4o")
 
 PROMPT_VERSION = 1
+
+# Token counts are measured; the dollar figure is not. Provider pricing drifts
+# and is not something to assert from memory, so the rate is configurable and
+# every derived amount is labelled an estimate. Recording a guessed price as a
+# settled charge is the exact mistake the Apify ledger already corrected.
+DEFAULT_USD_PER_MTOK_IN = 1.25
+DEFAULT_USD_PER_MTOK_OUT = 10.00
 MAX_FIELD = 400
 MAX_LEDE = 600
 
@@ -156,8 +163,29 @@ class LlmLedger:
     def spent(self) -> float:
         return round(sum(float(r.get("usd", 0)) for r in self.rows if r.get("date") == self.day), 4)
 
-    def permits(self, estimate_usd: float, cap_usd: float) -> bool:
-        return self.spent() + estimate_usd <= cap_usd
+    def spent_month(self) -> float:
+        month = self.day[:7]
+        return round(
+            sum(float(r.get("usd", 0)) for r in self.rows if str(r.get("date", "")).startswith(month)),
+            4,
+        )
+
+    def tokens_between(self, start: str, end: str) -> dict[str, int | float]:
+        """Measured token totals and the estimated cost over a date range."""
+        rows = [r for r in self.rows if start <= str(r.get("date", "")) <= end]
+        usage = [r.get("usage") or {} for r in rows]
+        return {
+            "calls": len(rows),
+            "input_tokens": sum(int(u.get("prompt_tokens", 0) or 0) for u in usage),
+            "output_tokens": sum(int(u.get("completion_tokens", 0) or 0) for u in usage),
+            "estimated_usd": round(sum(float(r.get("usd", 0)) for r in rows), 4),
+        }
+
+    def permits(self, estimate_usd: float, cap_usd: float,
+                monthly_cap_usd: float = 40.00) -> bool:
+        """Daily and monthly, both fail-closed, matching the Apify ledger."""
+        return (self.spent() + estimate_usd <= cap_usd
+                and self.spent_month() + estimate_usd <= monthly_cap_usd)
 
     def reserve(self, estimate_usd: float, model: str) -> int:
         self.rows.append({"date": self.day, "model": model, "usd": estimate_usd, "status": "reserved"})
@@ -182,6 +210,18 @@ class LlmLedger:
             json.dumps({"version": 1, "runs": self.rows}, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+
+
+def estimate_cost(usage: dict[str, Any]) -> float | None:
+    """Cost from measured tokens at a configurable rate. None when unknown."""
+    prompt = usage.get("prompt_tokens")
+    completion = usage.get("completion_tokens")
+    if not isinstance(prompt, (int, float)) or not isinstance(completion, (int, float)):
+        return None
+    from .core import env_float
+    rate_in = env_float("LOZ_LLM_USD_PER_MTOK_IN", DEFAULT_USD_PER_MTOK_IN)
+    rate_out = env_float("LOZ_LLM_USD_PER_MTOK_OUT", DEFAULT_USD_PER_MTOK_OUT)
+    return round((prompt / 1_000_000) * rate_in + (completion / 1_000_000) * rate_out, 6)
 
 
 def models() -> tuple[str, ...]:
@@ -307,6 +347,7 @@ def analyse(
     *,
     ledger: LlmLedger,
     cap_usd: float = 2.00,
+    monthly_cap_usd: float = 40.00,
     timeout: float = 90.0,
     estimate_usd: float = 0.25,
 ) -> tuple[Analysis | None, str]:
@@ -320,7 +361,7 @@ def analyse(
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         return None, "no_api_key"
-    if not ledger.permits(estimate_usd, cap_usd):
+    if not ledger.permits(estimate_usd, cap_usd, monthly_cap_usd):
         return None, "budget_exhausted"
 
     payload = _payload(clusters, recent)
@@ -340,7 +381,11 @@ def analyse(
             return None, reason
 
         usage = response.get("usage") or {}
-        ledger.settle(row, usd=estimate_usd, status="succeeded", usage=usage)
+        # Settle on what the call actually consumed, not the reservation. The
+        # reservation stands only when the provider reports no token counts.
+        measured = estimate_cost(usage)
+        ledger.settle(row, usd=measured if measured is not None else estimate_usd,
+                      status="succeeded", usage=usage)
         try:
             content = response["choices"][0]["message"]["content"]
             raw = json.loads(content)
