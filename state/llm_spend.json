@@ -1,0 +1,20 @@
+{
+  "runs": [
+    {
+      "date": "2026-09-21",
+      "model": "gpt-5",
+      "status": "auth_failed",
+      "usd": 0.25
+    },
+    {
+      "date": "2026-09-21",
+      "model": "gpt-5",
+      "status": "succeeded",
+      "usage": {
+        "total_tokens": 1200
+      },
+      "usd": 0.25
+    }
+  ],
+  "version": 1
+}

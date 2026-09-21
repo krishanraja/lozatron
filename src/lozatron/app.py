@@ -6,10 +6,14 @@ import json
 import os
 from pathlib import Path
 
-from . import gmail, schedule
+from . import analyst, gmail, render as render_mod, schedule, store
 from .apify import collect_paid
+from .brief import compose
 from .cluster import select_clusters
-from .core import DeliveryState, render_email, select_stories, utcnow
+from .core import (
+    DeliveryState, candidate, eligible, passes_hard_gates, render_email,
+    select_stories, utcnow,
+)
 from .sources import collect
 
 
@@ -65,11 +69,34 @@ def run(
     window = 8 if mode == "breaking" else 48
     limit = 3 if mode == "breaking" else 10
 
+    # Counted for the "screened and set aside" line, which answers the standing
+    # complaint that rejections were never explained.
+    filtered = {
+        "stale": sum(1 for item in stories if not passes_hard_gates(item, now, window)),
+        "off-mandate": sum(
+            1 for item in stories
+            if passes_hard_gates(item, now, window) and not candidate(item, now, window)
+        ),
+    }
+    # What Lauren has already been told, so novelty is judged against her
+    # actual history rather than guessed. Empty until the archive is live,
+    # which weakens novelty scoring without breaking anything.
+    recent = store.recent() if store.configured() else []
+
     # Clustering collapses one event reported by several outlets into a single
     # entry. `to_mark` carries every member, so outlet B's copy is suppressed
     # the moment outlet A's ships -- which is how the cross-outlet duplicate
     # closes without introducing a second dedup concept.
-    clustering = os.environ.get("LOZ_CLUSTERING", "").lower() == "true"
+    # off | shadow | live. Shadow calls the model, validates and logs the
+    # result, and still ships the deterministic brief, so its output can be read
+    # before Lauren ever sees it.
+    analyst_mode = os.environ.get("LOZ_ANALYST", "off").strip().lower()
+    if mode == "breaking":
+        # Breaking exists to get three stories out fast. Running the model on
+        # every 90-minute check quadruples spend and adds 16 daily chances for
+        # the critical path to fail, for a format that gains nothing from it.
+        analyst_mode = "off"
+    clustering = os.environ.get("LOZ_CLUSTERING", "").lower() == "true" or analyst_mode != "off"
     if clustering:
         clusters = select_clusters(
             stories, state.contains, now=now, window_hours=window, limit=limit
@@ -82,11 +109,42 @@ def run(
         to_mark = selected
         corroboration = {}
 
-    subject, text_body, html_body = render_email(mode, selected, now)
+    # The analyst scores and explains within the gated set. It never adds a
+    # story, never reorders, and never decides how many ship.
+    analysis, analysis_reason = (None, "off")
+    document = None
+    archive_reason = "not_attempted"
+    if analyst_mode != "off" and clusters:
+        ledger = analyst.LlmLedger(spend_path.parent / "llm_spend.json").load()
+        analysis, analysis_reason = analyst.analyse(
+            clusters, recent,
+            ledger=ledger,
+            cap_usd=float(os.environ.get("LOZ_LLM_DAILY_USD_CAP", "2.00") or 2.00),
+        )
+
+    if analyst_mode == "live" and analysis is not None:
+        document = compose(
+            clusters, analysis, mode=mode, slot=slot, now=now,
+            degraded="" if analysis_reason in ("ok", "partial_analysis") else analysis_reason,
+            filtered=filtered,
+        )
+        try:
+            subject, text_body, html_body = render_mod.render(document)
+        except ValueError:
+            # The shape check failed. Fall all the way back rather than send
+            # something whose structure we could not verify.
+            analysis_reason = "render_shape_failed"
+            subject, text_body, html_body = render_email(mode, selected, now)
+    else:
+        subject, text_body, html_body = render_email(mode, selected, now)
     edition = edition_id(mode, slot, now)
     sent = False
     message_id = ""
-    should_send = bool(selected) or mode == "briefing"
+    # A briefing with nothing in it used to still send "No qualifying new
+    # stories were found", which is three guaranteed emails a day regardless
+    # of signal. Silence is the more useful message: a missing brief then
+    # means something is wrong rather than nothing happened.
+    should_send = bool(selected)
     if should_send and not dry_run:
         message_id = gmail.send(subject, text_body, html_body, edition_id=edition)
         sent = True
@@ -95,12 +153,21 @@ def run(
             state.record_slot(slot, now)
         state.prune(now)
         state.save()
+        if document is not None:
+            archive_reason = store.record(
+                document, edition_id=edition, sent=True,
+                model=analysis.model if analysis else "",
+            )
 
     result = {
         "mode": mode,
         "slot": slot,
         "clustering": clustering,
         "corroboration": corroboration,
+        "analyst_mode": analyst_mode,
+        "analysis": analysis_reason,
+        "archive": archive_reason,
+        "filtered": filtered,
         "edition_id": edition,
         "dry_run": dry_run,
         "sources_seen": len(stories),
@@ -125,6 +192,20 @@ def compare(mode: str, state_path: Path) -> dict[str, object]:
     stories, source_errors = collect(now)
     window = 8 if mode == "breaking" else 48
     limit = 3 if mode == "breaking" else 10
+
+    # Counted for the "screened and set aside" line, which answers the standing
+    # complaint that rejections were never explained.
+    filtered = {
+        "stale": sum(1 for item in stories if not passes_hard_gates(item, now, window)),
+        "off-mandate": sum(
+            1 for item in stories
+            if passes_hard_gates(item, now, window) and not candidate(item, now, window)
+        ),
+    }
+    # What Lauren has already been told, so novelty is judged against her
+    # actual history rather than guessed. Empty until the archive is live,
+    # which weakens novelty scoring without breaking anything.
+    recent = store.recent() if store.configured() else []
 
     flat = select_stories(stories, state.keys(), now=now, window_hours=window, limit=limit)
     clusters = select_clusters(stories, state.contains, now=now, window_hours=window, limit=limit)
@@ -197,6 +278,7 @@ def main() -> int:
                     f"- Sources seen: {result['sources_seen']}",
                     f"- Stories selected: {result['stories_selected']}",
                     f"- Email sent: {result['sent']}",
+                    f"- Analyst: {result.get('analyst_mode')} ({result.get('analysis')})",
                     f"- Source errors: {len(result['source_errors'])}",
                 ]
             handle.write("\n".join(lines) + "\n")

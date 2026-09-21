@@ -33,6 +33,38 @@ probed instead, so a resend cannot put the brief in the inbox twice.
 
 Scheduled jobs stay off until the repository variable `LOZATRON_ENABLED` is set to `true`.
 
+## The analysis layer
+
+Off by default. `LOZ_ANALYST` takes `off`, `shadow` or `live`.
+
+The model reasons; code decides. It is sent titles, outlets, summaries and an
+integer age, never a URL and never a timestamp, so it cannot choose a link or
+invent a date. It returns JSON against a strict schema, and a second validation
+pass rejects any individual story containing markup, a link, a line break, an
+unknown id, or a field that merely echoes its input. It does not choose what
+ships, how many ship, or in what order: deterministic gates and `rank()` own
+all three.
+
+Every failure degrades to the deterministic brief and names its reason in the
+step summary: `auth_failed`, `quota_exhausted`, `model_not_found`,
+`rate_limited`, `schema_rejected`, `render_shape_failed`. A retired model id
+moves to the next entry in `LOZ_ANALYST_MODELS` rather than taking the run down.
+Spend is reserved before the call and capped by `LOZ_LLM_DAILY_USD_CAP`.
+
+Breaking-news runs are always deterministic. They exist to move fast, and the
+model would add sixteen daily chances for the critical path to fail.
+
+## The archive
+
+`LOZ_ARCHIVE=true` writes each edition to the `lozatron` Postgres schema, which
+is deliberately not part of the mind/make OS and grants nothing to `anon` or
+`authenticated`. An anon key on that project reaches OS tables, so no browser
+may ever hold one: any future brief page must read through a server-side route
+holding the service key.
+
+The schema must be listed under Settings > API > Exposed schemas. Until it is,
+archiving reports `schema_not_exposed` and the brief ships unaffected.
+
 ## Required repository secrets
 
 - `GOOGLE_CLIENT_ID`
@@ -46,6 +78,8 @@ Optional:
 
 - `NEWSAPI_KEY`
 - `APIFY_TOKEN`
+- `OPENAI_API_KEY`, required only when `LOZ_ANALYST` is not `off`
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, required only when `LOZ_ARCHIVE=true`
 
 Paid sources also require `LOZ_ENABLE_PAID_SOURCES=true`. The optional `LOZ_APIFY_DAILY_USD_CAP` variable defaults to `1.00`. Paid sources are disabled by default.
 

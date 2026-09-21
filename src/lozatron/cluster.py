@@ -148,6 +148,9 @@ class Cluster:
     tokens: frozenset[str] = frozenset()
     anchors: frozenset[str] = frozenset()
     score: int = 0
+    # Integer hours, set at selection. The analyst is given this instead of a
+    # timestamp so it cannot reason about -- or invent -- dates.
+    age_hours: int = 0
 
     @property
     def key(self) -> str:
@@ -219,5 +222,6 @@ def select_clusters(
     ]
     for cluster in clusters:
         cluster.score = rank(cluster.leader, now)
+        cluster.age_hours = max(0, round((now - cluster.leader.published_at).total_seconds() / 3600))
     clusters.sort(key=lambda c: (-c.score, -c.corroboration, -c.leader.published_at.timestamp()))
     return clusters[:limit]
