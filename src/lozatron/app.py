@@ -11,8 +11,8 @@ from .apify import DEFAULT_DAILY_CAP_USD, DEFAULT_MONTHLY_CAP_USD, collect_paid
 from .brief import compose
 from .cluster import select_clusters
 from .core import (
-    DeliveryState, candidate, eligible, passes_hard_gates, render_email,
-    select_stories, utcnow,
+    DeliveryState, candidate, eligible, env_flag, env_float, env_int, env_text,
+    passes_hard_gates, render_email, select_stories, utcnow,
 )
 from .sources import collect
 
@@ -44,16 +44,16 @@ def paid_sources_due(
     So: one paid opportunity per day, on the morning brief, and only when the
     free sources came up short. Everything else is free.
     """
-    if os.environ.get("LOZ_ENABLE_PAID_SOURCES", "").lower() != "true":
+    if not env_flag("LOZ_ENABLE_PAID_SOURCES"):
         return False, "disabled"
     if dry_run:
         return False, "dry_run"
     if mode != "briefing":
         return False, "breaking_mode"
-    morning = str(min(schedule.parse_slots(os.environ.get("LOZ_BRIEF_SLOTS_ET"))))
+    morning = str(min(schedule.parse_slots(env_text("LOZ_BRIEF_SLOTS_ET"))))
     if slot and not slot.endswith(f"T{int(morning):02d}"):
         return False, "not_morning_slot"
-    threshold = int(os.environ.get("LOZ_PAID_MIN_FREE", "6") or 6)
+    threshold = env_int("LOZ_PAID_MIN_FREE", 6)
     if free_candidates >= threshold:
         return False, "free_sources_sufficient"
     return True, "due"
@@ -79,7 +79,7 @@ def run(
         slot = schedule.due_slot(
             now,
             state.delivered_slots(),
-            slots=schedule.parse_slots(os.environ.get("LOZ_BRIEF_SLOTS_ET")),
+            slots=schedule.parse_slots(env_text("LOZ_BRIEF_SLOTS_ET")),
         )
         if slot is None:
             return {
@@ -127,13 +127,13 @@ def run(
     # off | shadow | live. Shadow calls the model, validates and logs the
     # result, and still ships the deterministic brief, so its output can be read
     # before Lauren ever sees it.
-    analyst_mode = os.environ.get("LOZ_ANALYST", "off").strip().lower()
+    analyst_mode = env_text("LOZ_ANALYST", "off").lower()
     if mode == "breaking":
         # Breaking exists to get three stories out fast. Running the model on
         # every 90-minute check quadruples spend and adds 16 daily chances for
         # the critical path to fail, for a format that gains nothing from it.
         analyst_mode = "off"
-    clustering = os.environ.get("LOZ_CLUSTERING", "").lower() == "true" or analyst_mode != "off"
+    clustering = env_flag("LOZ_CLUSTERING") or analyst_mode != "off"
     if clustering:
         clusters = select_clusters(
             stories, state.contains, now=now, window_hours=window, limit=limit
@@ -156,7 +156,7 @@ def run(
         analysis, analysis_reason = analyst.analyse(
             clusters, recent,
             ledger=ledger,
-            cap_usd=float(os.environ.get("LOZ_LLM_DAILY_USD_CAP", "2.00") or 2.00),
+            cap_usd=env_float("LOZ_LLM_DAILY_USD_CAP", 2.00),
         )
 
     if analyst_mode == "live" and analysis is not None:
@@ -296,8 +296,8 @@ def main() -> int:
     if args.cost_report:
         report = costs.gather(args.spend_state, utcnow())
         caps = {
-            "daily": float(os.environ.get("LOZ_APIFY_DAILY_USD_CAP", str(DEFAULT_DAILY_CAP_USD))),
-            "monthly": float(os.environ.get("LOZ_APIFY_MONTHLY_USD_CAP", str(DEFAULT_MONTHLY_CAP_USD))),
+            "daily": env_float("LOZ_APIFY_DAILY_USD_CAP", DEFAULT_DAILY_CAP_USD),
+            "monthly": env_float("LOZ_APIFY_MONTHLY_USD_CAP", DEFAULT_MONTHLY_CAP_USD),
         }
         subject, text_body, html_body = costs.render(report, caps=caps)
         to = gmail.ops_recipients()

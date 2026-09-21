@@ -27,11 +27,9 @@ SCHEMA = "lozatron"
 
 
 def configured() -> bool:
-    return bool(
-        os.environ.get("SUPABASE_URL", "").strip()
-        and os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-        and os.environ.get("LOZ_ARCHIVE", "").lower() == "true"
-    )
+    from .core import env_flag, env_text
+    return bool(env_text("SUPABASE_URL") and env_text("SUPABASE_SERVICE_ROLE_KEY")
+                and env_flag("LOZ_ARCHIVE"))
 
 
 def _headers(write: bool) -> dict[str, str]:

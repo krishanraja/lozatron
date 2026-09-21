@@ -49,8 +49,8 @@ def ops_recipients() -> list[str]:
     Cost reports and alarms are Krish's business, not the reader's, so they
     fall back to the CC list rather than the brief's recipients.
     """
-    raw = os.environ.get("LOZ_OPS_EMAILS", "") or os.environ.get("LOZ_CC_EMAILS", "")
-    return [item.strip() for item in raw.split(",") if item.strip()]
+    from .core import env_list
+    return env_list("LOZ_OPS_EMAILS", "LOZ_CC_EMAILS")
 
 
 def cc_recipients() -> list[str]:

@@ -185,8 +185,8 @@ class LlmLedger:
 
 
 def models() -> tuple[str, ...]:
-    raw = os.environ.get("LOZ_ANALYST_MODELS", "").strip()
-    return tuple(m.strip() for m in raw.split(",") if m.strip()) or DEFAULT_MODELS
+    from .core import env_list
+    return tuple(env_list("LOZ_ANALYST_MODELS")) or DEFAULT_MODELS
 
 
 def _clean(value: object, limit: int) -> str:

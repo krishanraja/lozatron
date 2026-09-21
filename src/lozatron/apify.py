@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from . import http
-from .core import Story, parse_datetime, utcnow
+from .core import Story, env_float, parse_datetime, utcnow
 
 # `estimate_usd` is only a pre-flight reservation. It is never the reported cost:
 # Apify pricing drifts and these figures have never been checked against an
@@ -308,8 +308,8 @@ def collect_paid(spend_path: Path, now: dt.datetime | None = None) -> tuple[list
     if not token:
         return [], [], False
     current = now or utcnow()
-    cap = float(os.environ.get("LOZ_APIFY_DAILY_USD_CAP", str(DEFAULT_DAILY_CAP_USD)))
-    monthly_cap = float(os.environ.get("LOZ_APIFY_MONTHLY_USD_CAP", str(DEFAULT_MONTHLY_CAP_USD)))
+    cap = env_float("LOZ_APIFY_DAILY_USD_CAP", DEFAULT_DAILY_CAP_USD)
+    monthly_cap = env_float("LOZ_APIFY_MONTHLY_USD_CAP", DEFAULT_MONTHLY_CAP_USD)
     state = SpendState(spend_path, current.date().isoformat()).load()
     stories: list[Story] = []
     errors: list[str] = []

@@ -6,6 +6,7 @@ import email.utils
 import hashlib
 import html
 import json
+import os
 import re
 import urllib.parse
 from pathlib import Path
@@ -39,6 +40,44 @@ STRONG_TERMS = (
     "payout", "monetization", "contract", "licensing", "signed", "appoints",
     "hires", "sold", "storefront",
 )
+
+
+def env_text(name: str, default: str = "") -> str:
+    """Read an environment variable, treating empty as unset.
+
+    GitHub renders an unset repository variable as an empty string rather than
+    omitting it, so `os.environ.get(name, default)` returns "" and the default
+    never applies. Every setting in this system is read through these helpers
+    for that reason.
+    """
+    return (os.environ.get(name) or "").strip() or default
+
+
+def env_float(name: str, default: float) -> float:
+    try:
+        return float(env_text(name, str(default)))
+    except ValueError:
+        return default
+
+
+def env_int(name: str, default: int) -> int:
+    try:
+        return int(env_text(name, str(default)))
+    except ValueError:
+        return default
+
+
+def env_flag(name: str) -> bool:
+    return env_text(name).lower() == "true"
+
+
+def env_list(*names: str) -> list[str]:
+    """First non-empty comma-separated variable among `names`, split and cleaned."""
+    for name in names:
+        raw = env_text(name)
+        if raw:
+            return [item.strip() for item in raw.split(",") if item.strip()]
+    return []
 
 
 def utcnow() -> dt.datetime:
