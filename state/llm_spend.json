@@ -14,6 +14,27 @@
         "total_tokens": 1200
       },
       "usd": 0.25
+    },
+    {
+      "date": "2026-09-21",
+      "model": "gpt-5",
+      "status": "succeeded",
+      "usage": {
+        "completion_tokens": 2653,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 2048,
+          "rejected_prediction_tokens": 0
+        },
+        "prompt_tokens": 526,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 0
+        },
+        "total_tokens": 3179
+      },
+      "usd": 0.027187
     }
   ],
   "version": 1
