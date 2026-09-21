@@ -43,6 +43,16 @@ def recipients() -> list[str]:
     return [item for item in values if item]
 
 
+def ops_recipients() -> list[str]:
+    """Where operational mail goes. Never Lauren's address.
+
+    Cost reports and alarms are Krish's business, not the reader's, so they
+    fall back to the CC list rather than the brief's recipients.
+    """
+    raw = os.environ.get("LOZ_OPS_EMAILS", "") or os.environ.get("LOZ_CC_EMAILS", "")
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 def cc_recipients() -> list[str]:
     values = [item.strip() for item in os.environ.get("LOZ_CC_EMAILS", "").split(",")]
     return [item for item in values if item]
@@ -81,7 +91,8 @@ def probe_sent(edition_id: str) -> str | None:
     return str(messages[0].get("id")) if messages else None
 
 
-def send(subject: str, text_body: str, html_body: str, *, edition_id: str = "") -> str:
+def send(subject: str, text_body: str, html_body: str, *, edition_id: str = "",
+         to: list[str] | None = None, cc: list[str] | None = None) -> str:
     """Send the brief. Returns the Gmail message id.
 
     Deliberately NOT retried on read timeouts or server errors: either may mean
@@ -91,8 +102,10 @@ def send(subject: str, text_body: str, html_body: str, *, edition_id: str = "") 
     so a genuine send is recognised rather than repeated.
     """
     sender = _required("GOOGLE_SENDER_EMAIL")
-    to = recipients()
-    cc = cc_recipients()
+    to = to if to is not None else recipients()
+    cc = cc if cc is not None else cc_recipients()
+    if not to:
+        raise RuntimeError("No recipients resolved for this message")
     message = EmailMessage()
     message["From"] = sender
     message["To"] = ", ".join(to)

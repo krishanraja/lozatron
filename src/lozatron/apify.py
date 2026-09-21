@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 import os
@@ -10,11 +11,31 @@ from typing import Any
 from . import http
 from .core import Story, parse_datetime, utcnow
 
+# `estimate_usd` is only a pre-flight reservation. It is never the reported cost:
+# Apify pricing drifts and these figures have never been checked against an
+# invoice, so every run is reconciled afterwards against the authoritative
+# `usageTotalUsd` on the run object. `max_charge_usd` is enforced by Apify
+# itself, which is the only cap that holds when an actor misbehaves; the local
+# ledger cap can only decide whether to start a run, never how much it bills.
 PROFILES: dict[str, dict[str, Any]] = {
-    "x_creator": {"actor": "apidojo~tweet-scraper", "daily_cap": 4, "estimate_usd": 0.007},
-    "reddit_creator": {"actor": "trudax~reddit-scraper-lite", "daily_cap": 2, "estimate_usd": 0.18},
-    "youtube_community": {"actor": "lurkapi~youtube-community-posts-scraper", "daily_cap": 1, "estimate_usd": 0.85},
+    "x_creator": {
+        "actor": "apidojo~tweet-scraper", "daily_cap": 1,
+        "estimate_usd": 0.007, "max_charge_usd": 0.05, "max_items": 30,
+    },
+    "reddit_creator": {
+        "actor": "trudax~reddit-scraper-lite", "daily_cap": 1,
+        "estimate_usd": 0.18, "max_charge_usd": 0.25, "max_items": 24,
+    },
+    "youtube_community": {
+        "actor": "lurkapi~youtube-community-posts-scraper", "daily_cap": 1,
+        "estimate_usd": 0.85, "max_charge_usd": 0.90, "max_items": 18,
+    },
 }
+
+# A ceiling above the daily one, because thirty days at the daily cap is a bill
+# nobody agreed to. Both are checked before any run starts.
+DEFAULT_DAILY_CAP_USD = 1.00
+DEFAULT_MONTHLY_CAP_USD = 8.00
 
 X_QUERY = (
     "(from:MrBeast OR from:KSI OR from:Sidemen OR from:ColinandSamir OR "
@@ -75,15 +96,52 @@ class SpendState:
             self.all_runs = []
         return self
 
+    @staticmethod
+    def _cost(row: dict[str, Any]) -> float:
+        """What a row costs against the cap.
+
+        The settled charge once Apify has reported one, the reservation until
+        then. Never both, and never zero just because a run failed: a failed
+        run still bills.
+        """
+        actual = row.get("actual_usd")
+        if isinstance(actual, (int, float)):
+            return float(actual)
+        return float(row.get("estimated_usd", 0) or 0)
+
     def spent(self) -> float:
-        return round(sum(float(row.get("estimated_usd", 0)) for row in self.runs), 4)
+        return round(sum(self._cost(row) for row in self.runs), 4)
+
+    def spent_month(self) -> float:
+        month = self.day[:7]
+        return round(
+            sum(self._cost(row) for row in self.all_runs if str(row.get("date", "")).startswith(month)),
+            4,
+        )
+
+    def spent_between(self, start: str, end: str) -> tuple[float, int]:
+        """Settled spend and run count over an inclusive date range."""
+        rows = [row for row in self.all_runs if start <= str(row.get("date", "")) <= end]
+        return round(sum(self._cost(row) for row in rows), 4), len(rows)
 
     def count(self, profile: str) -> int:
         return sum(1 for row in self.runs if row.get("profile") == profile)
 
-    def permits(self, profile: str, daily_usd_cap: float) -> bool:
+    def permits(self, profile: str, daily_usd_cap: float,
+                monthly_usd_cap: float = DEFAULT_MONTHLY_CAP_USD) -> bool:
+        """Three independent gates, all fail-closed.
+
+        Run count per profile, spend today, and spend this month. The monthly
+        gate exists because thirty days at the daily cap is a bill nobody
+        agreed to.
+        """
         cfg = PROFILES[profile]
-        return self.count(profile) < int(cfg["daily_cap"]) and self.spent() + float(cfg["estimate_usd"]) <= daily_usd_cap
+        estimate = float(cfg["estimate_usd"])
+        return (
+            self.count(profile) < int(cfg["daily_cap"])
+            and self.spent() + estimate <= daily_usd_cap
+            and self.spent_month() + estimate <= monthly_usd_cap
+        )
 
     def record(self, profile: str, *, status: str = "reserved") -> int:
         """Reserve budget for a run. Returns the row index for `settle`."""
@@ -95,10 +153,21 @@ class SpendState:
         })
         return len(self.all_runs) - 1
 
-    def settle(self, row_id: int, *, status: str) -> None:
-        """Record the outcome of a reserved run. Cost is never refunded."""
+    def settle(self, row_id: int, *, status: str, actual_usd: float | None = None,
+               run_id: str = "") -> None:
+        """Record the outcome of a reserved run.
+
+        `actual_usd` replaces the estimate for cap arithmetic and reporting, so
+        the weekly figure is what Apify charged rather than what this file
+        guessed. Cost is never refunded: a failed run has still billed.
+        """
         if 0 <= row_id < len(self.all_runs):
-            self.all_runs[row_id]["status"] = status
+            row = self.all_runs[row_id]
+            row["status"] = status
+            if run_id:
+                row["run_id"] = run_id
+            if actual_usd is not None:
+                row["actual_usd"] = round(float(actual_usd), 6)
 
     def prune(self) -> None:
         cutoff = (dt.date.fromisoformat(self.day) - dt.timedelta(days=self.RETENTION_DAYS)).isoformat()
@@ -143,30 +212,85 @@ def _request(method: str, url: str, token: str, body: dict[str, Any] | None = No
     return http.request_json(url, method=method, data=data, headers=headers, timeout=timeout)
 
 
-def _run_profile(profile: str, token: str, now: dt.datetime) -> list[dict[str, Any]]:
-    actor = urllib.parse.quote(PROFILES[profile]["actor"], safe="")
+@dataclasses.dataclass(slots=True)
+class RunResult:
+    items: list[dict[str, Any]]
+    run_id: str = ""
+    status: str = ""
+    usd: float | None = None      # authoritative charge, None when unknown
+
+
+def _actual_cost(run_data: dict[str, Any]) -> float | None:
+    """The charge Apify reports for this run, not the figure we guessed."""
+    for key in ("usageTotalUsd", "chargedTotalUsd"):
+        value = run_data.get(key)
+        if isinstance(value, (int, float)):
+            return round(float(value), 6)
+    return None
+
+
+def _run_profile(profile: str, token: str, now: dt.datetime) -> RunResult:
+    config = PROFILES[profile]
+    actor = urllib.parse.quote(config["actor"], safe="")
+    # maxTotalChargeUsd is the only ceiling Apify itself enforces. maxItems caps
+    # charged rows for pay-per-result actors. Both are sent; neither substitutes
+    # for the other, because they bound different pricing models.
+    params = urllib.parse.urlencode({
+        "waitForFinish": 120,
+        "maxTotalChargeUsd": config["max_charge_usd"],
+        "maxItems": config["max_items"],
+    })
     run = _request(
         "POST",
-        f"https://api.apify.com/v2/acts/{actor}/runs?waitForFinish=120",
+        f"https://api.apify.com/v2/acts/{actor}/runs?{params}",
         token,
         _input(profile, now),
     )
     run_data = run.get("data") or {}
+    run_id = str(run_data.get("id") or "")
+    status = str(run_data.get("status") or "")
+
     # A RUNNING actor has not finished writing its dataset. Reading it anyway
     # yields a partial result that then gets recorded as a complete run -- paid
     # for in full, acted on in part. Only a terminal SUCCEEDED counts.
-    if run_data.get("status") != "SUCCEEDED":
-        return []
+    if status != "SUCCEEDED":
+        # It still billed for whatever it did, so refetch the real charge rather
+        # than recording the estimate for a run that produced nothing.
+        return RunResult([], run_id, status, _settled_cost(run_id, token))
+
     dataset_id = run_data.get("defaultDatasetId")
     if not dataset_id:
-        return []
+        return RunResult([], run_id, status, _settled_cost(run_id, token))
     items = _request(
         "GET",
         f"https://api.apify.com/v2/datasets/{urllib.parse.quote(dataset_id)}/items?format=json&clean=true",
         token,
         timeout=60,
     )
-    return items if isinstance(items, list) else []
+    return RunResult(
+        items if isinstance(items, list) else [],
+        run_id,
+        status,
+        _settled_cost(run_id, token) or _actual_cost(run_data),
+    )
+
+
+def _settled_cost(run_id: str, token: str) -> float | None:
+    """Refetch a finished run for its final charge.
+
+    Cost is not final at the moment a run reports terminal state, so the figure
+    on the start response can understate the bill. A failed read returns None
+    and the reservation stands, which errs toward over-counting spend rather
+    than under-counting it.
+    """
+    if not run_id:
+        return None
+    try:
+        data = _request("GET", f"https://api.apify.com/v2/actor-runs/{urllib.parse.quote(run_id)}",
+                        token, timeout=30)
+        return _actual_cost(data.get("data") or {})
+    except Exception:  # noqa: BLE001 - cost readback must never fail a run
+        return None
 
 
 def _as_story(profile: str, row: dict[str, Any]) -> Story | None:
@@ -184,22 +308,31 @@ def collect_paid(spend_path: Path, now: dt.datetime | None = None) -> tuple[list
     if not token:
         return [], [], False
     current = now or utcnow()
-    cap = float(os.environ.get("LOZ_APIFY_DAILY_USD_CAP", "1.00"))
+    cap = float(os.environ.get("LOZ_APIFY_DAILY_USD_CAP", str(DEFAULT_DAILY_CAP_USD)))
+    monthly_cap = float(os.environ.get("LOZ_APIFY_MONTHLY_USD_CAP", str(DEFAULT_MONTHLY_CAP_USD)))
     state = SpendState(spend_path, current.date().isoformat()).load()
     stories: list[Story] = []
     errors: list[str] = []
     changed = False
     for profile in PROFILES:
-        if not state.permits(profile, cap):
+        if not state.permits(profile, cap, monthly_cap):
             continue
         row_id = state.record(profile)
         changed = True
         try:
-            rows = _run_profile(profile, token, current)
-            state.settle(row_id, status="succeeded")
-            stories.extend(item for row in rows if (item := _as_story(profile, row)) is not None)
+            result = _run_profile(profile, token, current)
+            state.settle(
+                row_id,
+                status=result.status.lower() or "succeeded",
+                actual_usd=result.usd,
+                run_id=result.run_id,
+            )
+            stories.extend(
+                item for row in result.items if (item := _as_story(profile, row)) is not None
+            )
         except Exception as exc:
-            # The reservation stands. The actor may well have run and billed.
+            # The reservation stands. The actor may well have run and billed,
+            # and a run-creation POST is never retried blindly.
             state.settle(row_id, status="failed")
             errors.append(f"Apify/{profile}: {type(exc).__name__}")
     if changed:

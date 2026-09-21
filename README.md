@@ -81,7 +81,36 @@ Optional:
 - `OPENAI_API_KEY`, required only when `LOZ_ANALYST` is not `off`
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, required only when `LOZ_ARCHIVE=true`
 
-Paid sources also require `LOZ_ENABLE_PAID_SOURCES=true`. The optional `LOZ_APIFY_DAILY_USD_CAP` variable defaults to `1.00`. Paid sources are disabled by default.
+## Paid sources and cost control
+
+Disabled by default, and gated four ways even when enabled.
+
+**When money may be spent.** At most one paid opportunity a day: the morning
+brief only, and only when the free feeds came up short (`LOZ_PAID_MIN_FREE`,
+default 6). Breaking-news runs never spend. This matters more than any cap:
+paid scraping previously fired on every non-dry run with no mode check, so the
+sixteen breaking checks a day could consume the whole budget overnight, before
+the 9am brief that is actually read.
+
+**How much may be spent.** Three independent fail-closed gates: runs per profile
+per day, `LOZ_APIFY_DAILY_USD_CAP` (default 1.00) and
+`LOZ_APIFY_MONTHLY_USD_CAP` (default 8.00). Above those, every run carries
+`maxTotalChargeUsd` and `maxItems`, which Apify enforces on its own side. The
+local ledger can only decide whether to start a run; it can never decide how
+much that run bills, so the hard ceiling is the one that holds when an actor
+misbehaves.
+
+**What it actually cost.** Spend is reserved before dispatch, then reconciled
+against the `usageTotalUsd` Apify reports for that run. The estimates in
+`PROFILES` are reservations only and have never been an invoice. A failed run
+still counts: it still billed.
+
+**Weekly report.** `.github/workflows/apify-cost.yml` emails last week's spend
+every Monday at 08:00 ET, to `LOZ_OPS_EMAILS` (falling back to `LOZ_CC_EMAILS`)
+and never to the brief's recipients. It reports Lozatron's own runs, not
+account-wide Apify usage, which would sweep in unrelated actors and make the
+figure unattributable. Run it on demand with
+`lozatron --cost-report --dry-run`.
 
 No secret value belongs in this repository, logs, issues or workflow inputs.
 

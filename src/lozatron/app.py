@@ -6,8 +6,8 @@ import json
 import os
 from pathlib import Path
 
-from . import analyst, gmail, render as render_mod, schedule, store
-from .apify import collect_paid
+from . import analyst, costs, gmail, render as render_mod, schedule, store
+from .apify import DEFAULT_DAILY_CAP_USD, DEFAULT_MONTHLY_CAP_USD, collect_paid
 from .brief import compose
 from .cluster import select_clusters
 from .core import (
@@ -24,6 +24,39 @@ def edition_id(mode: str, slot: str | None, now: dt.datetime) -> str:
     same message and cannot duplicate. Timestamped otherwise.
     """
     return f"{slot}-{mode}" if slot else f"{now:%Y-%m-%dT%H%M%S}Z-{mode}"
+
+
+def paid_sources_due(
+    mode: str,
+    slot: str | None,
+    free_candidates: int,
+    *,
+    dry_run: bool,
+) -> tuple[bool, str]:
+    """Decide whether to spend money on this run. Returns (run_it, reason).
+
+    Paid scraping used to fire on every non-dry run, with no mode check, which
+    meant all sixteen breaking-news checks a day could spend the budget. Those
+    run overnight, so the per-profile daily caps were routinely consumed by a
+    4am alert before the 9am brief -- the one that is actually read -- ever
+    started. Full price, worst possible delivery.
+
+    So: one paid opportunity per day, on the morning brief, and only when the
+    free sources came up short. Everything else is free.
+    """
+    if os.environ.get("LOZ_ENABLE_PAID_SOURCES", "").lower() != "true":
+        return False, "disabled"
+    if dry_run:
+        return False, "dry_run"
+    if mode != "briefing":
+        return False, "breaking_mode"
+    morning = str(min(schedule.parse_slots(os.environ.get("LOZ_BRIEF_SLOTS_ET"))))
+    if slot and not slot.endswith(f"T{int(morning):02d}"):
+        return False, "not_morning_slot"
+    threshold = int(os.environ.get("LOZ_PAID_MIN_FREE", "6") or 6)
+    if free_candidates >= threshold:
+        return False, "free_sources_sufficient"
+    return True, "due"
 
 
 def run(
@@ -61,13 +94,17 @@ def run(
             }
 
     stories, source_errors = collect(now)
+    window = 8 if mode == "breaking" else 48
+    limit = 3 if mode == "breaking" else 10
+
+    # Count what the free sources produced before deciding to pay for more.
+    free_candidates = sum(1 for item in stories if candidate(item, now, window))
     paid_changed = False
-    if os.environ.get("LOZ_ENABLE_PAID_SOURCES", "").lower() == "true" and not dry_run:
+    run_paid, paid_reason = paid_sources_due(mode, slot, free_candidates, dry_run=dry_run)
+    if run_paid:
         paid_stories, paid_errors, paid_changed = collect_paid(spend_path, now)
         stories.extend(paid_stories)
         source_errors.extend(paid_errors)
-    window = 8 if mode == "breaking" else 48
-    limit = 3 if mode == "breaking" else 10
 
     # Counted for the "screened and set aside" line, which answers the standing
     # complaint that rejections were never explained.
@@ -176,6 +213,8 @@ def run(
         "message_id_present": bool(message_id),
         "source_errors": source_errors,
         "paid_state_changed": paid_changed,
+        "paid_sources": paid_reason,
+        "free_candidates": free_candidates,
         "selected": [item.to_dict() for item in selected],
     }
     return result
@@ -236,13 +275,15 @@ def compare(mode: str, state_path: Path) -> dict[str, object]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Lozatron email briefings")
-    parser.add_argument("--mode", choices=("briefing", "breaking"), required=True)
+    parser.add_argument("--mode", choices=("briefing", "breaking"), default="briefing")
     parser.add_argument("--state", type=Path, default=Path("state/delivered.json"))
     parser.add_argument("--spend-state", type=Path, default=Path("state/spend.json"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--verify-credentials", action="store_true")
     parser.add_argument("--no-slot-gate", action="store_true",
                         help="Deliver regardless of the Eastern slot ledger")
+    parser.add_argument("--cost-report", action="store_true",
+                        help="Email the weekly Apify spend report to the ops address")
     parser.add_argument("--compare", action="store_true",
                         help="Print clustered vs unclustered selection; sends nothing")
     args = parser.parse_args()
@@ -250,6 +291,33 @@ def main() -> int:
     if args.verify_credentials:
         gmail.verify_credentials()
         print(json.dumps({"credentials_valid": True}))
+        return 0
+
+    if args.cost_report:
+        report = costs.gather(args.spend_state, utcnow())
+        caps = {
+            "daily": float(os.environ.get("LOZ_APIFY_DAILY_USD_CAP", str(DEFAULT_DAILY_CAP_USD))),
+            "monthly": float(os.environ.get("LOZ_APIFY_MONTHLY_USD_CAP", str(DEFAULT_MONTHLY_CAP_USD))),
+        }
+        subject, text_body, html_body = costs.render(report, caps=caps)
+        to = gmail.ops_recipients()
+        sent = False
+        if to and not args.dry_run:
+            gmail.send(subject, text_body, html_body, to=to, cc=[])
+            sent = True
+        print(json.dumps({**report, "sent": sent, "recipients": len(to)}, indent=2, default=str))
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as handle:
+                handle.write(
+                    f"## Lozatron Apify cost\n\n"
+                    f"- Week: {report['start']} to {report['end']}\n"
+                    f"- Total: ${report['total']:.2f} across {report['runs']} runs\n"
+                    f"- Month to date: ${report['month_to_date']:.2f}\n"
+                    f"- Emailed: {sent}\n"
+                )
+        if not to:
+            print("::warning title=No ops recipients::Set LOZ_OPS_EMAILS or LOZ_CC_EMAILS.")
         return 0
 
     if args.compare:
@@ -279,6 +347,7 @@ def main() -> int:
                     f"- Stories selected: {result['stories_selected']}",
                     f"- Email sent: {result['sent']}",
                     f"- Analyst: {result.get('analyst_mode')} ({result.get('analysis')})",
+                    f"- Paid sources: {result.get('paid_sources')}",
                     f"- Source errors: {len(result['source_errors'])}",
                 ]
             handle.write("\n".join(lines) + "\n")
