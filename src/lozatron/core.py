@@ -236,20 +236,38 @@ class Story:
 # cost and keep plainly off-topic material out, NOT to decide the brief -- that
 # is what the narrow CREATOR_TERMS gate was doing, and a 22-phrase tuple deciding
 # what a President reads is the ceiling on how good this can get.
-DOMAIN_TERMS = (
-    "creator", "creators", "influencer", "influencers", "ugc", "streamer", "streaming",
-    "youtube", "tiktok", "instagram", "snapchat", "twitch", "kick", "substack",
-    "patreon", "spotify", "podcast*", "podcaster", "newsletter", "shorts", "reels",
-    "subscriber", "subscription", "monetiz*", "monetis*", "sponsorship", "brand deal", "creator fund",
-    "talent agency", "mcn", "fan", "audience", "social video", "short-form",
-    "roblox", "discord", "onlyfans", "beehiiv", "linktree", "gumroad", "whatnot",
-    "social media", "digital media", "advertis*", "affiliate", "merch", "storefront",
-    # Rule 7, from a named past miss: sports, fitness and lifestyle creator
-    # brands, creator-led leagues and event/IP expansions are creator-business
-    # stories. Filing them as sport is how Good Good Golf was dropped.
-    "creator-led", "league", "tour", "golf", "fitness", "wellness", "esports",
-    "team owner", "franchise", "live event", "festival", "residency",
+# Creator-specific. One of these must be present for a story to be in the domain
+# at all -- they are what makes it creator news rather than media news.
+CORE_TERMS = (
+    # Terms that can only mean the creator economy. Measured against live trade
+    # copy, three were not: "kick" matched "kick off", and "streamer",
+    # "subscriber" and "audience" are what the film trades call Netflix. Each
+    # one admitted film-industry news into a creator brief, so they moved to
+    # QUALIFIED where they need a core term beside them.
+    "creator", "creators", "creator-led", "creator economy", "creator fund",
+    "influencer", "influencers", "ugc", "youtube", "youtuber", "tiktok",
+    "instagram", "twitch", "substack", "patreon", "podcaster", "onlyfans",
+    "beehiiv", "linktree", "gumroad", "whatnot", "mcn", "brand deal",
+    "talent agency", "short-form", "shorts", "reels", "social video",
+    "newsletter", "roblox", "snapchat",
 )
+
+# Commercial and format vocabulary. These only count ALONGSIDE a core term.
+# Rule 7 asks for creator-led leagues, sports, fitness and event or IP
+# expansions to be treated as creator business. Admitting "festival", "tour" and
+# "franchise" on their own instead admitted the entire film festival circuit:
+# a live run returned the SCAD Savannah and Camden film festivals and a Netflix
+# executive moving to Amazon. Qualifying them fixes rule 7 without that.
+QUALIFIED_TERMS = (
+    "monetiz*", "monetis*", "sponsor*", "subscription", "advertis*", "affiliate",
+    "merch", "storefront", "commerc*", "licens*", "licenc*", "partner*",
+    "league", "tour", "golf", "fitness", "wellness", "esports", "team owner",
+    "franchise", "live event", "festival", "residency", "digital media",
+    "streamer", "streaming", "subscriber", "subscription", "audience", "fan",
+    "fandom", "podcast", "social media", "discord",
+)
+
+DOMAIN_TERMS = CORE_TERMS + QUALIFIED_TERMS
 
 # Freshness is arithmetic and stays in code, always. This is the June 2026
 # crisis encoded: a rule that lives in prompt text is not a rule.
@@ -258,6 +276,7 @@ JUNK_PHRASES = ("internship", "job opening", "apply now")
 
 
 _DOMAIN = None
+_CORE = None
 _BUSINESS = None
 _SOFT = None
 _STRONG = None
@@ -265,14 +284,15 @@ _CREATOR = None
 
 
 def _matchers():
-    global _DOMAIN, _BUSINESS, _SOFT, _STRONG, _CREATOR
+    global _DOMAIN, _BUSINESS, _SOFT, _STRONG, _CREATOR, _CORE
     if _DOMAIN is None:
         _DOMAIN = term_matcher(DOMAIN_TERMS)
+        _CORE = term_matcher(CORE_TERMS)
         _BUSINESS = term_matcher(BUSINESS_TERMS)
         _SOFT = term_matcher(SOFT_PATTERNS)
         _STRONG = term_matcher(STRONG_TERMS)
         _CREATOR = term_matcher(CREATOR_TERMS)
-    return _DOMAIN, _BUSINESS, _SOFT, _STRONG, _CREATOR
+    return _DOMAIN, _BUSINESS, _SOFT, _STRONG, _CREATOR, _CORE
 
 
 def passes_hard_gates(story: Story, now: dt.datetime, window_hours: int) -> bool:
@@ -304,8 +324,10 @@ def candidate(story: Story, now: dt.datetime, window_hours: int) -> bool:
         return False
     if story.tier == "primary":
         return True
-    domain, _, _, _, _ = _matchers()
-    return bool(domain.search(f"{story.title} {story.summary}"))
+    _, _, _, _, _, core = _matchers()
+    # In the domain means creator-specific, not merely commercial. A film
+    # festival is a festival; it is not creator business.
+    return bool(core.search(f"{story.title} {story.summary}"))
 
 
 def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
@@ -324,16 +346,21 @@ def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
     """
     if not passes_hard_gates(story, now, window_hours):
         return False
-    text = f"{story.title} {story.summary}".lower()
+    text = f"{story.title} {story.summary}"
     # A creator's own announcement is already business-filtered at ingest and
     # does not have to say the word "creator" to be creator news.
     if story.tier == "primary":
         return True
-    if not any(term in text for term in DOMAIN_TERMS):
+    _, business, soft, strong, _, core = _matchers()
+    # Creator-specific, not merely commercial. Film festivals and studio hires
+    # are media news; they reached a live brief when this asked only for a
+    # domain term, because "kick" matched "kick off" and the trades call
+    # Netflix a streamer.
+    if not core.search(text):
         return False
-    if not any(term in text for term in BUSINESS_TERMS):
+    if not business.search(text):
         return False
-    if any(term in text for term in SOFT_PATTERNS) and not any(term in text for term in STRONG_TERMS):
+    if soft.search(text) and not strong.search(text):
         return False
     return True
 
@@ -342,7 +369,7 @@ def rank(story: Story, now: dt.datetime) -> int:
     text = f"{story.title} {story.summary}".lower()
     age = max(0.0, (now - story.published_at).total_seconds() / 3600)
     score = 12 if age <= 3 else 9 if age <= 8 else 5 if age <= 24 else 1
-    _, _, _, strong, _ = _matchers()
+    _, _, _, strong, _, _ = _matchers()
     score += 2 * len(set(strong.findall(text)))
     score += 1 if re.search(r"\b(creator|youtube|tiktok|influencer)", text, re.I) else 0
     return score

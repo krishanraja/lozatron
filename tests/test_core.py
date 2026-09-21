@@ -120,3 +120,39 @@ def test_candidate_never_admits_what_a_hard_gate_rejected():
 def test_strict_gate_is_unchanged_and_remains_the_fallback():
     row = story("YouTube creator signs major brand partnership", 2)
     assert select_stories([row], set(), now=NOW, window_hours=48, limit=10)
+
+
+# --- rule 7 must not admit the film festival circuit ---
+
+def test_film_industry_news_is_not_creator_business():
+    """A live run returned all three of these before the domain split."""
+    from lozatron.core import candidate
+    cases = [
+        ("SCAD Savannah Film Festival to Open With 'A Talent for Murder'",
+         "The festival will honor Helen Mirren with its Legend of Entertainment Award."),
+        ("Netflix's Liz Franco Joins Amazon's Nonfiction Team",
+         "The streamer has hired a Netflix exec as a Creative Executive on docuseries."),
+        ("Camden Film Festival: 'Dependence' Takes Top Awards",
+         "The documentary festival announced its awards after wrapping its 22nd edition."),
+    ]
+    for title, summary in cases:
+        row = story(title, 2)
+        row.summary = summary
+        assert not candidate(row, NOW, 48), title
+        assert not select_stories([row], set(), now=NOW, window_hours=48, limit=10), title
+
+
+def test_rule_seven_still_admits_a_creator_led_league():
+    """Good Good Golf is the named miss: creator-led sport IS creator business."""
+    from lozatron.core import candidate
+    row = story("Good Good Golf launches creator-led league with new tour sponsorship", 2)
+    row.summary = "The creator-owned golf brand announced a league and a sponsorship deal."
+    assert candidate(row, NOW, 48)
+    assert select_stories([row], set(), now=NOW, window_hours=48, limit=10)
+
+
+def test_a_commercial_term_alone_is_not_enough():
+    from lozatron.core import candidate
+    row = story("Retail chain expands its licensing partnership with a franchise operator", 2)
+    row.summary = "The commercial agreement covers new storefront locations."
+    assert not candidate(row, NOW, 48)
