@@ -1,19 +1,60 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import os
 from pathlib import Path
 
+from . import gmail, schedule
 from .apify import collect_paid
-from . import gmail
 from .core import DeliveryState, render_email, select_stories, utcnow
 from .sources import collect
 
 
-def run(mode: str, state_path: Path, spend_path: Path, dry_run: bool) -> dict[str, object]:
+def edition_id(mode: str, slot: str | None, now: dt.datetime) -> str:
+    """Stable identity for one edition, used for the Gmail Message-ID.
+
+    Slot-based when a slot is known, so a retry of the same slot resolves to the
+    same message and cannot duplicate. Timestamped otherwise.
+    """
+    return f"{slot}-{mode}" if slot else f"{now:%Y-%m-%dT%H%M%S}Z-{mode}"
+
+
+def run(
+    mode: str,
+    state_path: Path,
+    spend_path: Path,
+    dry_run: bool,
+    *,
+    slot_gate: bool = False,
+) -> dict[str, object]:
     now = utcnow()
     state = DeliveryState(state_path).load()
+
+    # Briefings are promised at fixed Eastern times, but GitHub's scheduler
+    # delivers late and sometimes not at all. The gate asks which slot is
+    # outstanding rather than what hour it is now, so a delayed run still
+    # delivers and a delivered slot never fires twice.
+    slot: str | None = None
+    if slot_gate:
+        slot = schedule.due_slot(
+            now,
+            state.delivered_slots(),
+            slots=schedule.parse_slots(os.environ.get("LOZ_BRIEF_SLOTS_ET")),
+        )
+        if slot is None:
+            return {
+                "mode": mode,
+                "dry_run": dry_run,
+                "skipped": "not_due",
+                "sent": False,
+                "stories_selected": 0,
+                "sources_seen": 0,
+                "source_errors": [],
+                "selected": [],
+            }
+
     stories, source_errors = collect(now)
     paid_changed = False
     if os.environ.get("LOZ_ENABLE_PAID_SOURCES", "").lower() == "true" and not dry_run:
@@ -25,18 +66,23 @@ def run(mode: str, state_path: Path, spend_path: Path, dry_run: bool) -> dict[st
     selected = select_stories(stories, state.keys(), now=now, window_hours=window, limit=limit)
 
     subject, text_body, html_body = render_email(mode, selected, now)
+    edition = edition_id(mode, slot, now)
     sent = False
     message_id = ""
     should_send = bool(selected) or mode == "briefing"
     if should_send and not dry_run:
-        message_id = gmail.send(subject, text_body, html_body)
+        message_id = gmail.send(subject, text_body, html_body, edition_id=edition)
         sent = True
         state.mark(selected, now)
+        if slot:
+            state.record_slot(slot, now)
         state.prune(now)
         state.save()
 
     result = {
         "mode": mode,
+        "slot": slot,
+        "edition_id": edition,
         "dry_run": dry_run,
         "sources_seen": len(stories),
         "stories_selected": len(selected),
@@ -56,6 +102,8 @@ def main() -> int:
     parser.add_argument("--spend-state", type=Path, default=Path("state/spend.json"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--verify-credentials", action="store_true")
+    parser.add_argument("--no-slot-gate", action="store_true",
+                        help="Deliver regardless of the Eastern slot ledger")
     args = parser.parse_args()
 
     if args.verify_credentials:
@@ -63,19 +111,31 @@ def main() -> int:
         print(json.dumps({"credentials_valid": True}))
         return 0
 
-    result = run(args.mode, args.state, args.spend_state, args.dry_run)
+    # Scheduled briefings go through the slot gate; a manual dispatch always
+    # runs, so a human can force a delivery without fighting the ledger.
+    slot_gate = (
+        args.mode == "briefing"
+        and os.environ.get("GITHUB_EVENT_NAME") == "schedule"
+        and not args.no_slot_gate
+    )
+    result = run(args.mode, args.state, args.spend_state, args.dry_run, slot_gate=slot_gate)
     output = json.dumps(result, indent=2, default=str)
     print(output)
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as handle:
-            handle.write(
-                f"## Lozatron {args.mode}\n\n"
-                f"- Sources seen: {result['sources_seen']}\n"
-                f"- Stories selected: {result['stories_selected']}\n"
-                f"- Email sent: {result['sent']}\n"
-                f"- Source errors: {len(result['source_errors'])}\n"
-            )
+            lines = [f"## Lozatron {args.mode}", ""]
+            if result.get("skipped"):
+                lines.append(f"- Skipped: {result['skipped']} (no Eastern slot outstanding)")
+            else:
+                lines += [
+                    f"- Slot: {result.get('slot') or 'n/a'}",
+                    f"- Sources seen: {result['sources_seen']}",
+                    f"- Stories selected: {result['stories_selected']}",
+                    f"- Email sent: {result['sent']}",
+                    f"- Source errors: {len(result['source_errors'])}",
+                ]
+            handle.write("\n".join(lines) + "\n")
     return 0
 
 

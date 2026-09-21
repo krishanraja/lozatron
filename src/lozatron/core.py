@@ -148,23 +148,54 @@ def select_stories(
 
 
 class DeliveryState:
+    """The delivery ledger: which stories have shipped, and which slots.
+
+    Written only after Gmail returns a message id, which is what makes it
+    trustworthy. Schema version 2 adds `slots`; version 1 files load unchanged
+    and simply carry no slot history, so no migration is required.
+    """
+
+    SCHEMA_VERSION = 2
+    SLOT_RETENTION_DAYS = 30
+
     def __init__(self, path: Path):
         self.path = path
         self.rows: dict[str, str] = {}
+        self.slots: dict[str, str] = {}
         self.last_success_date = ""
 
     def load(self) -> "DeliveryState":
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             self.rows = dict(data.get("delivered", {}))
+            self.slots = dict(data.get("slots", {}))
             self.last_success_date = str(data.get("last_success_date", ""))
         except (FileNotFoundError, json.JSONDecodeError, TypeError, ValueError):
             self.rows = {}
+            self.slots = {}
             self.last_success_date = ""
         return self
 
     def keys(self) -> set[str]:
         return set(self.rows)
+
+    def delivered_slots(self) -> set[str]:
+        return set(self.slots)
+
+    def record_slot(self, slot: str, when: dt.datetime) -> None:
+        self.slots[slot] = when.astimezone(UTC).isoformat()
+
+    def hours_since_success(self, when: dt.datetime) -> float | None:
+        """Age of the newest recorded slot, for the staleness watchdog.
+
+        Returns None when nothing has ever been delivered, which a caller must
+        treat differently from a fresh delivery.
+        """
+        stamps = [parse_datetime(value) for value in self.slots.values()]
+        latest = max((item for item in stamps if item is not None), default=None)
+        if latest is None:
+            return None
+        return (when.astimezone(UTC) - latest).total_seconds() / 3600
 
     def mark(self, stories: Iterable[Story], when: dt.datetime) -> None:
         stamp = when.astimezone(UTC).isoformat()
@@ -180,13 +211,20 @@ class DeliveryState:
             if parsed is None or parsed >= cutoff:
                 kept[key] = value
         self.rows = kept
+        slot_cutoff = when - dt.timedelta(days=self.SLOT_RETENTION_DAYS)
+        self.slots = {
+            key: value
+            for key, value in self.slots.items()
+            if (parsed := parse_datetime(value)) is None or parsed >= slot_cutoff
+        }
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "version": 1,
+            "version": self.SCHEMA_VERSION,
             "last_success_date": self.last_success_date,
             "delivered": dict(sorted(self.rows.items())),
+            "slots": dict(sorted(self.slots.items())),
         }
         self.path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

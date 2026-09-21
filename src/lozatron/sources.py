@@ -5,10 +5,10 @@ import json
 import os
 import re
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Iterable
 
+from . import http
 from .core import Story, parse_datetime, utcnow
 
 FEEDS = (
@@ -19,7 +19,6 @@ FEEDS = (
     ("Hollywood Reporter", "https://www.hollywoodreporter.com/feed/"),
     ("TechCrunch", "https://techcrunch.com/feed/"),
     ("NetInfluencer", "https://www.netinfluencer.com/feed/"),
-    ("Marketing Brew", "https://www.marketingbrew.com/rss"),
     ("Podnews", "https://podnews.net/feed"),
     ("The Verge", "https://www.theverge.com/rss/index.xml"),
     ("Passionfruit", "https://passionfru.it/feed/"),
@@ -33,10 +32,14 @@ NEWS_QUERIES = (
 )
 
 
-def _fetch(url: str, *, timeout: int = 15) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "Lozatron/1.0"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return response.read(2_000_000)
+# Podnews alone ships ~2.3 MB, and the previous 2 MB cap truncated it mid-XML
+# on every run, which surfaced only as an opaque ParseError.
+FEED_READ_LIMIT = 12_000_000
+
+
+def _fetch(url: str, *, timeout: int = 20) -> bytes:
+    """Fetch a feed. Reads are idempotent, so transient faults retry."""
+    return http.request(url, timeout=timeout, retries=2, read_limit=FEED_READ_LIMIT)
 
 
 def _text(node: ET.Element | None) -> str:
@@ -46,10 +49,21 @@ def _text(node: ET.Element | None) -> str:
 
 
 def _first(node: ET.Element, names: Iterable[str]) -> ET.Element | None:
-    wanted = {name.lower() for name in names}
+    """First child matching `names`, in the order `names` gives them.
+
+    The original scanned in document order against a set, so an Atom entry
+    carrying both <updated> and <published> yielded whichever appeared first in
+    the XML rather than the one we actually wanted. For the date lookup that
+    silently substituted a modification time for the publication time, which is
+    the input to every freshness decision in the system.
+    """
+    by_tag: dict[str, ET.Element] = {}
     for child in node.iter():
-        if child.tag.rsplit("}", 1)[-1].lower() in wanted:
-            return child
+        tag = child.tag.rsplit("}", 1)[-1].lower()
+        by_tag.setdefault(tag, child)
+    for name in names:
+        if (found := by_tag.get(name.lower())) is not None:
+            return found
     return None
 
 
@@ -64,7 +78,7 @@ def rss_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[str]]
             for entry in entries[:40]:
                 title = _text(_first(entry, ("title",)))
                 summary = _text(_first(entry, ("description", "summary", "content")))
-                date_text = _text(_first(entry, ("pubdate", "published", "updated", "date")))
+                date_text = _text(_first(entry, ("published", "pubdate", "date", "updated")))
                 published = parse_datetime(date_text)
                 link_node = _first(entry, ("link",))
                 link = "" if link_node is None else (link_node.attrib.get("href") or _text(link_node))
@@ -92,7 +106,7 @@ def newsapi_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[s
             "apiKey": api_key,
         })
         try:
-            payload = json.loads(_fetch(f"https://newsapi.org/v2/everything?{params}").decode("utf-8"))
+            payload = http.request_json(f"https://newsapi.org/v2/everything?{params}", timeout=15, retries=2)
             for item in payload.get("articles", []):
                 published = parse_datetime(item.get("publishedAt"))
                 if published and item.get("title") and item.get("url"):

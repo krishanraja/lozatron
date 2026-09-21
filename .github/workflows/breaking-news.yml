@@ -38,6 +38,7 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+        timeout-minutes: 8
         run: lozatron --mode breaking --verify-credentials
       - name: Run breaking-news check
         env:
@@ -51,13 +52,24 @@ jobs:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           LOZ_ENABLE_PAID_SOURCES: ${{ vars.LOZ_ENABLE_PAID_SOURCES }}
           LOZ_APIFY_DAILY_USD_CAP: ${{ vars.LOZ_APIFY_DAILY_USD_CAP }}
+        timeout-minutes: 8
         run: lozatron --mode breaking ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
       - name: Save delivery state
-        if: github.event_name == 'schedule' || inputs.dry_run == false
+        if: ${{ always() && (github.event_name == 'schedule' || inputs.dry_run == false) }}
         run: |
           if git diff --quiet -- state; then exit 0; fi
           git config user.name "lozatron[bot]"
           git config user.email "lozatron-bot@users.noreply.github.com"
           git add state
           git commit -m "state: record breaking delivery and paid-source use"
-          git push
+          # The email has already gone out by this point, so losing the push
+          # means losing the dedup ledger and re-sending stories Lauren has
+          # read. Rebase onto whatever landed meanwhile and retry before
+          # failing loudly.
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
+            sleep $((attempt * 5))
+          done
+          echo "::error title=DEDUP STATE LOST::Email was sent but delivery state could not be pushed."
+          exit 1

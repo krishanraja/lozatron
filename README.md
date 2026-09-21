@@ -13,6 +13,24 @@ Production status: live on GitHub Actions since 2026-09-20. Telegram delivery is
 - Gmail delivery only after tests and credential verification pass.
 - Delivery state committed only after Gmail returns a message id.
 
+## Delivery slots
+
+GitHub's scheduler is best-effort: observed runs on this repository arrive
+between 22 minutes and 2.6 hours after their nominal time, and some slots are
+dropped outright. Scheduled briefings therefore do not ask "what hour is it?" —
+they ask which Eastern slot is still outstanding, within a 200-minute grace
+window, and deliver that. A delayed run still delivers. A slot already recorded
+in `state/delivered.json` cannot fire twice. A slot missed beyond grace stays
+missed rather than arriving in the evening dressed as the morning brief.
+
+`workflow_dispatch` always bypasses the gate, so a human can force a delivery.
+`LOZ_BRIEF_SLOTS_ET` overrides the default `9,14,18`.
+
+Each edition carries a deterministic `Message-ID`. The Gmail send is the one
+call that is never retried on a timeout or server error, because either may
+mean the message was already accepted; on an ambiguous failure the edition id is
+probed instead, so a resend cannot put the brief in the inbox twice.
+
 Scheduled jobs stay off until the repository variable `LOZATRON_ENABLED` is set to `true`.
 
 ## Required repository secrets

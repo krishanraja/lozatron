@@ -1,0 +1,103 @@
+"""Orchestrator behaviour: the slot gate and edition identity."""
+
+import datetime as dt
+
+from lozatron import app
+from lozatron.core import DeliveryState, Story
+
+UTC = dt.timezone.utc
+
+
+def fake_collect(rows):
+    return lambda now=None: (list(rows), [])
+
+
+def story(title="Creator signs major brand partnership deal", hours=2):
+    return Story(
+        title=title,
+        url="https://example.com/a",
+        source="Test",
+        published_at=dt.datetime(2026, 9, 21, 13, 5, tzinfo=UTC) - dt.timedelta(hours=hours),
+        summary="Creator economy business update",
+    )
+
+
+def test_edition_id_is_slot_scoped_when_a_slot_is_known():
+    now = dt.datetime(2026, 9, 21, 13, 5, tzinfo=UTC)
+    assert app.edition_id("briefing", "2026-09-21T09", now) == "2026-09-21T09-briefing"
+
+
+def test_edition_id_is_stable_across_retries_of_the_same_slot():
+    a = app.edition_id("briefing", "2026-09-21T09", dt.datetime(2026, 9, 21, 13, 5, tzinfo=UTC))
+    b = app.edition_id("briefing", "2026-09-21T09", dt.datetime(2026, 9, 21, 15, 40, tzinfo=UTC))
+    assert a == b, "a delayed retry must resolve to the same edition, not a new one"
+
+
+def test_skips_cleanly_when_no_slot_is_due(tmp_path, monkeypatch):
+    state_path = tmp_path / "delivered.json"
+    state = DeliveryState(state_path).load()
+    state.record_slot("2026-09-21T09", dt.datetime(2026, 9, 21, 13, 5, tzinfo=UTC))
+    state.save()
+
+    monkeypatch.setattr(app, "utcnow", lambda: dt.datetime(2026, 9, 21, 14, 0, tzinfo=UTC))
+    called = {"collect": False}
+
+    def spy(now=None):
+        called["collect"] = True
+        return [], []
+
+    monkeypatch.setattr(app, "collect", spy)
+    result = app.run("briefing", state_path, tmp_path / "spend.json", dry_run=True, slot_gate=True)
+
+    assert result["skipped"] == "not_due"
+    assert result["sent"] is False
+    assert called["collect"] is False, "a skipped run must not spend time or money collecting"
+
+
+def test_delayed_run_still_delivers_its_slot(tmp_path, monkeypatch):
+    """A 09:00 ET slot run arriving at 11:05 ET must still go out."""
+    monkeypatch.setattr(app, "utcnow", lambda: dt.datetime(2026, 9, 21, 15, 5, tzinfo=UTC))
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+    result = app.run("briefing", tmp_path / "d.json", tmp_path / "s.json",
+                     dry_run=True, slot_gate=True)
+    assert result["slot"] == "2026-09-21T09"
+    assert result["stories_selected"] == 1
+
+
+def test_slot_is_recorded_only_after_a_successful_send(tmp_path, monkeypatch):
+    state_path = tmp_path / "delivered.json"
+    monkeypatch.setattr(app, "utcnow", lambda: dt.datetime(2026, 9, 21, 13, 5, tzinfo=UTC))
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+
+    def boom(*a, **k):
+        raise RuntimeError("gmail down")
+
+    monkeypatch.setattr(app.gmail, "send", boom)
+    try:
+        app.run("briefing", state_path, tmp_path / "s.json", dry_run=False, slot_gate=True)
+    except RuntimeError:
+        pass
+    assert DeliveryState(state_path).load().delivered_slots() == set(), \
+        "a failed send must leave the slot outstanding so the next run retries it"
+
+
+def test_successful_send_records_slot_and_fingerprints(tmp_path, monkeypatch):
+    state_path = tmp_path / "delivered.json"
+    monkeypatch.setattr(app, "utcnow", lambda: dt.datetime(2026, 9, 21, 13, 5, tzinfo=UTC))
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+    monkeypatch.setattr(app.gmail, "send", lambda *a, **k: "msg-1")
+
+    result = app.run("briefing", state_path, tmp_path / "s.json", dry_run=False, slot_gate=True)
+    assert result["sent"] is True
+
+    saved = DeliveryState(state_path).load()
+    assert saved.delivered_slots() == {"2026-09-21T09"}
+    assert len(saved.keys()) == 1
+
+
+def test_gate_is_off_by_default_so_dispatch_always_runs(tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "utcnow", lambda: dt.datetime(2026, 9, 21, 3, 0, tzinfo=UTC))
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+    result = app.run("briefing", tmp_path / "d.json", tmp_path / "s.json", dry_run=True)
+    assert "skipped" not in result
+    assert result["slot"] is None

@@ -59,7 +59,7 @@ def test_state_round_trip(tmp_path):
     state.mark([row], NOW)
     state.save()
     assert row.key in DeliveryState(path).load().keys()
-    assert json.loads(path.read_text())["version"] == 1
+    assert json.loads(path.read_text())["version"] == 2
     assert json.loads(path.read_text())["last_success_date"] == "2026-09-20"
 
 
