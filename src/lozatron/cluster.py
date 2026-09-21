@@ -1,0 +1,223 @@
+"""Deterministic near-duplicate clustering.
+
+One event currently arrives as three stories from three outlets, and all three
+ship. Fingerprinting is URL-based, so the same wire story on Variety and
+Deadline yields two different keys and neither suppresses the other.
+
+Clustering groups them into one entry carrying every outlet. That does two
+things at once: it stops the brief reading like a feed, and the number of
+independent outlets carrying a story becomes a corroboration signal that is
+actually earned, unlike a model's self-rated confidence.
+
+Pure functions, no I/O, integer arithmetic throughout so results are
+reproducible and diffable.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import hashlib
+import re
+import unicodedata
+
+from typing import Callable
+
+from .core import Story, eligible, normalize_url, rank
+
+# Words carrying no discriminating power in a headline.
+STOPWORDS = frozenset("""
+a an the and or but if then than that this these those of in on at to for from
+with without by as is are was were be been being has have had do does did will
+would can could may might must shall should its it his her their our your my
+after before during over under about into out up down off again more most some
+such no nor not only own same so too very just now here there when where why how
+all any both each few other own s t don now amid via
+""".split())
+
+# Domain noise: present in nearly every candidate, so it inflates similarity
+# toward false merges rather than distinguishing anything.
+DOMAIN_NOISE = frozenset("""
+creator creators economy influencer influencers content new news report reports
+says said exclusive update updates announce announces announced launch launches
+first latest top best big biggest major
+""".split())
+
+# Known entities. Capitalisation is unreliable as a proper-noun signal because
+# many headlines are Title Case, so a curated vocabulary carries the weight.
+ANCHOR_VOCAB = frozenset("""
+youtube tiktok instagram facebook meta snapchat snap twitch kick spotify apple
+amazon netflix disney google alphabet twitter threads bluesky patreon substack
+kajabi teachable shopify roblox discord reddit linkedin pinterest microsoft
+paramount warner comcast nbcuniversal fox sony universal hulu peacock max
+mrbeast ksi sidemen logan jake paul chamberlain cooper rogan hormozi
+colin samir markiplier pewdiepie dude perfect hasan pokimane ninja kaicenat
+tubefilter deadline variety digiday techcrunch verge podnews passionfruit
+linktree beehiiv ghost gumroad cameo whatnot fanfix onlyfans
+""".split())
+
+MONEY = re.compile(r"^\$?\d[\d,.]*[mbk]?$", re.IGNORECASE)
+# " - Variety", " | Deadline", " — The Hollywood Reporter"
+PUBLISHER_TAIL = re.compile(r"\s*[|–—-]\s*[A-Z][\w .&'’]{2,30}$")
+WORD = re.compile(r"[^\W_]+", re.UNICODE)
+
+MERGE_ANCHORED = 72     # similar enough, and the proper nouns agree
+MERGE_IDENTICAL = 88    # near-identical wire copy, no anchors needed
+
+
+def _stem(token: str) -> str:
+    """Strip a light inflection when at least four characters survive."""
+    for suffix in ("ing", "ed", "es", "s"):
+        if token.endswith(suffix) and len(token) - len(suffix) >= 4:
+            return token[: -len(suffix)]
+    return token
+
+
+def canon_tokens(title: str) -> tuple[frozenset[str], frozenset[str]]:
+    """Return (all_tokens, anchor_tokens) for a headline.
+
+    Anchors are the load-bearing half. Without them "YouTube announces creator
+    monetization change" and "TikTok announces creator monetization change" can
+    merge into one entry badged as two independent sources -- a correctness
+    failure that reads like a feature. Differing anchors block that.
+    """
+    stripped = PUBLISHER_TAIL.sub("", title.strip())
+    normalized = unicodedata.normalize("NFKD", stripped)
+    raw = WORD.findall(normalized)
+    title_case = sum(1 for word in raw if word[:1].isupper()) > max(1, len(raw) * 6 // 10)
+
+    tokens: set[str] = set()
+    anchors: set[str] = set()
+    for index, word in enumerate(raw):
+        lowered = word.casefold()
+        if MONEY.match(word):
+            anchors.add(lowered)
+            tokens.add(lowered)
+            continue
+        if lowered in STOPWORDS or lowered in DOMAIN_NOISE or len(lowered) < 2:
+            continue
+        stemmed = _stem(lowered)
+        tokens.add(stemmed)
+        if lowered in ANCHOR_VOCAB or stemmed in ANCHOR_VOCAB:
+            anchors.add(stemmed)
+        elif not title_case and index > 0 and word[:1].isupper() and len(word) >= 4:
+            anchors.add(stemmed)
+    return frozenset(tokens), frozenset(anchors)
+
+
+def _grams(tokens: frozenset[str]) -> frozenset[str]:
+    """Character 4-grams over the sorted token string.
+
+    Rescues morphological variants the deliberately-simple stemmer misses.
+    """
+    joined = " ".join(sorted(tokens))
+    return frozenset(joined[i:i + 4] for i in range(max(0, len(joined) - 3)))
+
+
+def similarity(a: frozenset[str], b: frozenset[str]) -> int:
+    """Headline similarity in hundredths. Integer arithmetic only."""
+    if not a or not b:
+        return 0
+    overlap = len(a & b)
+    jaccard = 100 * overlap // len(a | b)
+    # Containment is discounted so a short headline is not simply swallowed by
+    # a long one that happens to contain all of its words.
+    containment = (100 * overlap // min(len(a), len(b))) * 9 // 10
+    ga, gb = _grams(a), _grams(b)
+    grams = 100 * len(ga & gb) // max(1, len(ga | gb))
+    return max(jaccard, containment, grams)
+
+
+def should_merge(score: int, anchors_a: frozenset[str], anchors_b: frozenset[str]) -> bool:
+    if score >= MERGE_IDENTICAL:
+        return True
+    if score < MERGE_ANCHORED:
+        return False
+    # Both sides have anchors and they disagree -> different events.
+    if anchors_a and anchors_b:
+        return bool(anchors_a & anchors_b)
+    # One side has no proper nouns at all; fall back to the strict threshold.
+    return False
+
+
+@dataclasses.dataclass(slots=True)
+class Cluster:
+    """One event, and every outlet that carried it."""
+
+    leader: Story
+    members: list[Story] = dataclasses.field(default_factory=list)
+    tokens: frozenset[str] = frozenset()
+    anchors: frozenset[str] = frozenset()
+    score: int = 0
+
+    @property
+    def key(self) -> str:
+        """Presentation and archive identifier -- never the dedup primitive.
+
+        Derived from leader tokens, so it is not stable across runs when a
+        different member happens to be earliest. Deduplication stays on
+        per-story fingerprints for exactly that reason.
+        """
+        basis = " ".join(sorted(self.tokens)) or self.leader.title.casefold()
+        return "cl_" + hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+
+    @property
+    def outlets(self) -> list[str]:
+        seen: dict[str, None] = {}
+        for story in self.members:
+            seen.setdefault(story.source, None)
+        return list(seen)
+
+    @property
+    def corroboration(self) -> int:
+        """Independent outlets carrying this story. The honest confidence signal."""
+        return len(self.outlets)
+
+    def member_keys(self) -> list[str]:
+        return [story.key for story in self.members]
+
+
+def build_clusters(stories: list[Story]) -> list[Cluster]:
+    """Group stories into events.
+
+    Candidates are compared against each cluster's *leader* only, never against
+    any member. That is what keeps assignment deterministic and prevents
+    transitive chain-merge, where A~B and B~C but A is unlike C, collapsing
+    three separate events into one blob.
+    """
+    ordered = sorted(stories, key=lambda s: (s.published_at, normalize_url(s.url), s.title))
+    clusters: list[Cluster] = []
+    for story in ordered:
+        tokens, anchors = canon_tokens(story.title)
+        for cluster in clusters:
+            if should_merge(similarity(tokens, cluster.tokens), anchors, cluster.anchors):
+                cluster.members.append(story)
+                break
+        else:
+            clusters.append(Cluster(leader=story, members=[story], tokens=tokens, anchors=anchors))
+    return clusters
+
+
+def select_clusters(
+    stories: list[Story],
+    delivered: Callable[[Story], bool],
+    *,
+    now,
+    window_hours: int,
+    limit: int,
+) -> list[Cluster]:
+    """Gate, cluster, suppress and rank -- the clustered replacement for
+    `core.select_stories`.
+
+    Suppression is per-cluster: if Lauren has already been sent *any* member,
+    the event is not new, whichever outlet's copy arrived first. Ordering stays
+    with the deterministic `rank`, applied to the cluster leader.
+    """
+    fresh = [story for story in stories if eligible(story, now, window_hours)]
+    clusters = [
+        cluster for cluster in build_clusters(fresh)
+        if not any(delivered(member) for member in cluster.members)
+    ]
+    for cluster in clusters:
+        cluster.score = rank(cluster.leader, now)
+    clusters.sort(key=lambda c: (-c.score, -c.corroboration, -c.leader.published_at.timestamp()))
+    return clusters[:limit]

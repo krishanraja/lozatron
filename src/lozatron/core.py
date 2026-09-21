@@ -65,19 +65,60 @@ def parse_datetime(value: str | None) -> dt.datetime | None:
         return None
 
 
-def normalize_url(value: str) -> str:
+# Campaign and click-tracking parameters identify the referrer, not the article.
+TRACKING_PARAMS = frozenset({
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
+    "fbclid", "gclid", "gbraid", "wbraid", "msclkid", "mc_cid", "mc_eid", "igshid",
+    "ref", "ref_src", "source", "src", "cmpid", "ncid", "at_medium", "at_campaign",
+    "__twitter_impression", "_hsenc", "_hsmi", "vgo_ee", "sh",
+})
+
+# Both fingerprint schemes are written while this date stands, so the ledger
+# entries made before the query-string fix keep suppressing. Remove the v1
+# fallback and this constant after 2026-12-20, one full prune() cycle on.
+DUAL_KEY_UNTIL = dt.date(2026, 12, 20)
+
+
+def normalize_url(value: str, *, keep_query: bool = True) -> str:
+    """Canonical form of an article URL.
+
+    The original discarded the query string outright, which is fine for a site
+    using path-based article URLs and silently catastrophic for one using
+    `?p=12345`: every article on that host collapsed to a single fingerprint, so
+    exactly one story from it was ever deliverable and the rest were marked as
+    duplicates. Identifying parameters are now kept and tracking noise dropped.
+
+    `keep_query=False` reproduces the pre-fix behaviour byte for byte.
+    """
     try:
         parts = urllib.parse.urlsplit(value.strip())
         host = parts.netloc.lower().removeprefix("www.")
         path = parts.path.rstrip("/") or "/"
-        return urllib.parse.urlunsplit((parts.scheme.lower() or "https", host, path, "", ""))
+        query = ""
+        if keep_query and parts.query:
+            kept = sorted(
+                (key, val)
+                for key, val in urllib.parse.parse_qsl(parts.query, keep_blank_values=False)
+                if key.lower() not in TRACKING_PARAMS
+            )
+            query = urllib.parse.urlencode(kept)
+        return urllib.parse.urlunsplit((parts.scheme.lower() or "https", host, path, query, ""))
     except ValueError:
         return value.strip().lower()
 
 
+def _digest(basis: str, title: str) -> str:
+    material = basis or re.sub(r"\W+", " ", title.lower()).strip()
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
 def fingerprint(title: str, url: str) -> str:
-    basis = normalize_url(url) or re.sub(r"\W+", " ", title.lower()).strip()
-    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+    return _digest(normalize_url(url), title)
+
+
+def fingerprint_v1(title: str, url: str) -> str:
+    """The pre-fix fingerprint. Frozen: it is the shape of the live ledger."""
+    return _digest(normalize_url(url, keep_query=False), title)
 
 
 @dataclasses.dataclass(slots=True)
@@ -179,6 +220,19 @@ class DeliveryState:
     def keys(self) -> set[str]:
         return set(self.rows)
 
+    def contains(self, story: "Story", *, today: dt.date | None = None) -> bool:
+        """Has this story already been delivered, under either fingerprint?
+
+        The v1 check is what makes the query-string fix a non-event: entries
+        written before it keep matching, so nothing Lauren has already read is
+        re-sent on rollout.
+        """
+        if story.key in self.rows:
+            return True
+        if (today or utcnow().date()) <= DUAL_KEY_UNTIL:
+            return fingerprint_v1(story.title, story.url) in self.rows
+        return False
+
     def delivered_slots(self) -> set[str]:
         return set(self.slots)
 
@@ -198,10 +252,15 @@ class DeliveryState:
         return (when.astimezone(UTC) - latest).total_seconds() / 3600
 
     def mark(self, stories: Iterable[Story], when: dt.datetime) -> None:
+        """Record delivery. Writes both fingerprints during the dual-key window."""
         stamp = when.astimezone(UTC).isoformat()
-        self.last_success_date = when.astimezone(UTC).date().isoformat()
+        moment = when.astimezone(UTC)
+        self.last_success_date = moment.date().isoformat()
+        dual = moment.date() <= DUAL_KEY_UNTIL
         for story in stories:
             self.rows[story.key] = stamp
+            if dual:
+                self.rows[fingerprint_v1(story.title, story.url)] = stamp
 
     def prune(self, when: dt.datetime, days: int = 90) -> None:
         cutoff = when - dt.timedelta(days=days)

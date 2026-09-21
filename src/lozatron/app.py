@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import gmail, schedule
 from .apify import collect_paid
+from .cluster import select_clusters
 from .core import DeliveryState, render_email, select_stories, utcnow
 from .sources import collect
 
@@ -63,7 +64,23 @@ def run(
         source_errors.extend(paid_errors)
     window = 8 if mode == "breaking" else 48
     limit = 3 if mode == "breaking" else 10
-    selected = select_stories(stories, state.keys(), now=now, window_hours=window, limit=limit)
+
+    # Clustering collapses one event reported by several outlets into a single
+    # entry. `to_mark` carries every member, so outlet B's copy is suppressed
+    # the moment outlet A's ships -- which is how the cross-outlet duplicate
+    # closes without introducing a second dedup concept.
+    clustering = os.environ.get("LOZ_CLUSTERING", "").lower() == "true"
+    if clustering:
+        clusters = select_clusters(
+            stories, state.contains, now=now, window_hours=window, limit=limit
+        )
+        selected = [cluster.leader for cluster in clusters]
+        to_mark = [member for cluster in clusters for member in cluster.members]
+        corroboration = {cluster.leader.key: cluster.corroboration for cluster in clusters}
+    else:
+        selected = select_stories(stories, state.keys(), now=now, window_hours=window, limit=limit)
+        to_mark = selected
+        corroboration = {}
 
     subject, text_body, html_body = render_email(mode, selected, now)
     edition = edition_id(mode, slot, now)
@@ -73,7 +90,7 @@ def run(
     if should_send and not dry_run:
         message_id = gmail.send(subject, text_body, html_body, edition_id=edition)
         sent = True
-        state.mark(selected, now)
+        state.mark(to_mark, now)
         if slot:
             state.record_slot(slot, now)
         state.prune(now)
@@ -82,6 +99,8 @@ def run(
     result = {
         "mode": mode,
         "slot": slot,
+        "clustering": clustering,
+        "corroboration": corroboration,
         "edition_id": edition,
         "dry_run": dry_run,
         "sources_seen": len(stories),
@@ -95,6 +114,45 @@ def run(
     return result
 
 
+def compare(mode: str, state_path: Path) -> dict[str, object]:
+    """Show what clustering would change, against the same collected input.
+
+    Read-only: collects once, runs both selection paths over that identical
+    input, and reports the difference. Nothing is sent, nothing is marked.
+    """
+    now = utcnow()
+    state = DeliveryState(state_path).load()
+    stories, source_errors = collect(now)
+    window = 8 if mode == "breaking" else 48
+    limit = 3 if mode == "breaking" else 10
+
+    flat = select_stories(stories, state.keys(), now=now, window_hours=window, limit=limit)
+    clusters = select_clusters(stories, state.contains, now=now, window_hours=window, limit=limit)
+
+    merged = [
+        {
+            "title": cluster.leader.title,
+            "outlets": cluster.outlets,
+            "corroboration": cluster.corroboration,
+            "members": [member.title for member in cluster.members],
+        }
+        for cluster in clusters
+        if cluster.corroboration > 1
+    ]
+    flat_titles = [item.title for item in flat]
+    cluster_titles = [cluster.leader.title for cluster in clusters]
+    return {
+        "mode": mode,
+        "sources_seen": len(stories),
+        "source_errors": source_errors,
+        "unclustered_count": len(flat),
+        "clustered_count": len(clusters),
+        "merged_events": merged,
+        "only_in_unclustered": [t for t in flat_titles if t not in cluster_titles],
+        "only_in_clustered": [t for t in cluster_titles if t not in flat_titles],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Lozatron email briefings")
     parser.add_argument("--mode", choices=("briefing", "breaking"), required=True)
@@ -104,11 +162,17 @@ def main() -> int:
     parser.add_argument("--verify-credentials", action="store_true")
     parser.add_argument("--no-slot-gate", action="store_true",
                         help="Deliver regardless of the Eastern slot ledger")
+    parser.add_argument("--compare", action="store_true",
+                        help="Print clustered vs unclustered selection; sends nothing")
     args = parser.parse_args()
 
     if args.verify_credentials:
         gmail.verify_credentials()
         print(json.dumps({"credentials_valid": True}))
+        return 0
+
+    if args.compare:
+        print(json.dumps(compare(args.mode, args.state), indent=2, default=str))
         return 0
 
     # Scheduled briefings go through the slot gate; a manual dispatch always
