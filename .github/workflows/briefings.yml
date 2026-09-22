@@ -51,6 +51,10 @@ jobs:
           GOOGLE_SENDER_EMAIL: ${{ secrets.GOOGLE_SENDER_EMAIL }}
           LOZ_RECIPIENT_EMAILS: ${{ secrets.LOZ_RECIPIENT_EMAILS }}
           LOZ_CC_EMAILS: ${{ secrets.LOZ_CC_EMAILS }}
+          # Where the brief actually goes while reader delivery is switched off
+          # in gmail.py. Without it the run would fail rather than send, which
+          # is the right failure but a needless one.
+          LOZ_OPS_EMAILS: ${{ secrets.LOZ_OPS_EMAILS }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           LOZ_ENABLE_PAID_SOURCES: ${{ vars.LOZ_ENABLE_PAID_SOURCES }}

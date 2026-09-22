@@ -10,7 +10,7 @@ on:
         required: true
         default: briefing
         type: choice
-        options: [briefing, breaking]
+        options: [briefing]
       analyst:
         description: Analyst mode for this preview only
         required: true
