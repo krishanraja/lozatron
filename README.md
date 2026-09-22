@@ -83,6 +83,29 @@ declaration hid thirty live items behind the single word `ParseError` in a
 swallowed error list. Counts only: no titles, no URLs, nothing about what
 Lauren read.
 
+## The kill switch
+
+`READER_DELIVERY_ENABLED` in `src/lozatron/gmail.py` decides whether the brief
+reaches the reader. Set it to `False` and `recipients()` returns the ops
+address and only the ops address, whatever `LOZ_RECIPIENT_EMAILS` says; the
+run still happens, still renders, still records state, and the reader receives
+nothing.
+
+It is a code constant rather than a repository variable on purpose. On
+2026-09-22 the reader was flooded because a safety rule lived in a workflow
+variable that had been set on one of the two workflows that needed it, so the
+other kept running the ungated path. A constant cannot be absent, cannot be
+misspelled in one of two YAML files, and appears in the diff when it changes.
+
+`tests/test_hard_stop.py` sets it both ways rather than relying on whichever
+value ships today, so the mechanism stays proven in whichever state it is
+currently in.
+
+Backstopping it: `DeliveryState.MAX_SENDS_PER_DAY` caps the day at two emails,
+counted in the committed ledger and checked immediately before `gmail.send`.
+It bounds every path at once, so no future gate or flag can produce a flood
+whatever else is misconfigured.
+
 ## Delivery slots
 
 GitHub's scheduler is best-effort: observed runs on this repository arrive

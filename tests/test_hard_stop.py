@@ -28,19 +28,36 @@ def story(key: str) -> Story:
     )
 
 
-def test_reader_delivery_is_off_by_default():
-    assert gmail.READER_DELIVERY_ENABLED is False
-    assert gmail.reader_delivery_enabled() is False
+@pytest.fixture
+def stopped(monkeypatch):
+    """Engage the kill switch, whatever the shipped default happens to be.
+
+    These tests set the constant explicitly rather than relying on its current
+    value. The switch is off in production today and on tomorrow; what has to
+    keep working is the mechanism, so that re-engaging it stays a one-line
+    change that provably does what it says.
+    """
+    monkeypatch.setattr(gmail, "READER_DELIVERY_ENABLED", False)
 
 
-def test_recipients_are_ops_only_while_the_stop_is_engaged(monkeypatch):
+def test_reader_delivery_is_on_in_production():
+    """Guards the other direction: a flip back to False mutes the product.
+
+    Turning it off is a legitimate emergency action, but it has to be a
+    decision someone made, not a line that drifted back in a merge.
+    """
+    assert gmail.READER_DELIVERY_ENABLED is True
+    assert gmail.reader_delivery_enabled() is True
+
+
+def test_recipients_are_ops_only_while_the_stop_is_engaged(stopped, monkeypatch):
     monkeypatch.setenv("LOZ_RECIPIENT_EMAILS", "lauren@example.com")
     monkeypatch.setenv("LOZ_OPS_EMAILS", "ops@example.com")
     assert gmail.recipients() == ["ops@example.com"]
     assert gmail.cc_recipients() == []
 
 
-def test_the_stop_cannot_be_lifted_by_an_environment_variable(monkeypatch):
+def test_the_stop_cannot_be_lifted_by_an_environment_variable(stopped, monkeypatch):
     monkeypatch.setenv("LOZ_RECIPIENT_EMAILS", "lauren@example.com")
     monkeypatch.setenv("LOZ_OPS_EMAILS", "ops@example.com")
     for name in ("LOZ_READER_DELIVERY", "LOZ_ENABLE_READER_DELIVERY", "LOZ_SEND_TO_READER"):
@@ -48,7 +65,7 @@ def test_the_stop_cannot_be_lifted_by_an_environment_variable(monkeypatch):
     assert gmail.recipients() == ["ops@example.com"]
 
 
-def test_delivery_fails_loudly_rather_than_falling_back_to_the_reader(monkeypatch):
+def test_delivery_fails_loudly_rather_than_falling_back_to_the_reader(stopped, monkeypatch):
     monkeypatch.setenv("LOZ_RECIPIENT_EMAILS", "lauren@example.com")
     monkeypatch.delenv("LOZ_OPS_EMAILS", raising=False)
     monkeypatch.delenv("LOZ_CC_EMAILS", raising=False)
@@ -60,6 +77,15 @@ def test_lifting_the_stop_restores_the_configured_reader_list(monkeypatch):
     monkeypatch.setattr(gmail, "READER_DELIVERY_ENABLED", True)
     monkeypatch.setenv("LOZ_RECIPIENT_EMAILS", "lauren@example.com, other@example.com")
     assert gmail.recipients() == ["lauren@example.com", "other@example.com"]
+
+
+def test_the_reader_gets_every_configured_address(monkeypatch):
+    """Lauren has two. A brief reaching one of them is a half-delivery."""
+    monkeypatch.setattr(gmail, "READER_DELIVERY_ENABLED", True)
+    monkeypatch.setenv("LOZ_RECIPIENT_EMAILS", "one@example.com,two@example.com")
+    monkeypatch.setenv("LOZ_CC_EMAILS", "krish@example.com")
+    assert gmail.recipients() == ["one@example.com", "two@example.com"]
+    assert gmail.cc_recipients() == ["krish@example.com"]
 
 
 # --- the daily ceiling ---

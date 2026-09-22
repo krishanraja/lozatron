@@ -38,17 +38,22 @@ def refresh_access_token() -> str:
     return token
 
 
-# --- Reader delivery hard stop -------------------------------------------
+# --- Reader delivery switch ----------------------------------------------
 #
-# Lauren receives nothing while this is False. It is a code constant, not an
-# environment variable, deliberately: the failure that caused the flood was a
-# safety rule that lived in a workflow variable and was never wired into the
-# workflow that needed it. A constant cannot be absent, cannot be misspelled in
-# one of two YAML files, and shows up in the diff when it changes.
+# True: the brief goes to LOZ_RECIPIENT_EMAILS. False: it goes to the ops
+# address and the reader receives nothing, whatever any secret or variable
+# says.
 #
-# Flipping it to True is a one-line, reviewable change. Nothing else re-enables
-# reader delivery.
-READER_DELIVERY_ENABLED = False
+# It is a code constant rather than an environment variable, deliberately. The
+# flood on 2026-09-22 happened because a safety rule lived in a workflow
+# variable that was set on one of the two workflows that needed it. A constant
+# cannot be absent, cannot be misspelled in one of two YAML files, and shows up
+# in the diff when it changes.
+#
+# Set it to False to stop reader delivery immediately. That is the kill switch,
+# it is one line, and the tests in tests/test_hard_stop.py keep it working:
+# they set it both ways rather than relying on whichever value ships today.
+READER_DELIVERY_ENABLED = True
 
 
 def reader_delivery_enabled() -> bool:
