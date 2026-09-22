@@ -35,7 +35,6 @@ FEEDS = (
     # Added 2026-09-22 after the free primary layer was removed, to replace the
     # volume it was supplying with sources that actually clear the mandate
     # gate. Both probed live first.
-    ("Creator Handbook", "https://creatorhandbook.net/feed/"),
     ("Glossy", "https://www.glossy.co/feed/"),
 )
 
@@ -45,6 +44,9 @@ FEEDS = (
 #   Marketing Brew      -- no public RSS (the historical entry was always a 404)
 #   Creator Economy NYC -- no public RSS
 #   ICYMI (Lia Haberman)-- feed exists but carries one stale placeholder item
+#   Creator Handbook    -- parses from a residential IP and 403s from a GitHub
+#                          Actions runner whatever user agent is sent, so it
+#                          would be a permanent named error in every run
 #   Social Media Examiner, Modern Retail -- parse fine, produce nothing that
 #                          clears the mandate gate; pool noise only
 

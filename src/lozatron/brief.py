@@ -11,7 +11,7 @@ import dataclasses
 import datetime as dt
 from typing import Any
 
-from .core import clean_feed_text
+from .core import clean_feed_text, clean_link
 
 # Below this, the model is telling us it is unsure. Shown as a flag, never as a
 # number: a self-rated confidence score invites trust in a figure that is not
@@ -58,9 +58,19 @@ class Brief:
     degraded: str = ""
     filtered: dict[str, int] = dataclasses.field(default_factory=dict)
 
+    # Triage only. Flagging most of the brief is not triage, and the model
+    # flagged two of three stories on the first live edition, which turned the
+    # section into a second copy of the brief above the brief. If it flags at
+    # least half, the flag carried no information that edition and the section
+    # is dropped; otherwise it is capped.
+    MAX_DECISIONS = 3
+
     @property
     def decisions(self) -> list[Entry]:
-        return [entry for entry in self.entries if entry.needs_decision]
+        flagged = [entry for entry in self.entries if entry.needs_decision]
+        if not flagged or len(flagged) * 2 >= len(self.entries):
+            return []
+        return flagged[: self.MAX_DECISIONS]
 
     @property
     def analysed(self) -> bool:
@@ -87,7 +97,7 @@ def compose(
             # twin and the decision index all get the same clean string rather
             # than each needing to remember.
             title=clean_feed_text(cluster.leader.title, 300),
-            url=cluster.leader.url,
+            url=clean_link(cluster.leader.url),
             outlets=cluster.outlets,
             corroboration=cluster.corroboration,
             age_hours=cluster.age_hours,

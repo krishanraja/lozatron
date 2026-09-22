@@ -137,9 +137,14 @@ def render_text(brief: Brief) -> str:
     if brief.lede:
         lines += [brief.lede, ""]
     if brief.decisions:
+        # An index pointing down at the numbered stories, matching the HTML.
+        # It used to repeat each story's "why it matters" in full, so the top
+        # of the email was the brief twice over.
+        positions = {id(entry): number for number, entry in enumerate(brief.entries, 1)}
         lines += ["NEEDS YOUR CALL", ""]
         for entry in brief.decisions:
-            lines += [f"  {entry.title}", f"  {entry.why_it_matters}", ""]
+            lines.append(f"  {positions[id(entry)]:02d}  {entry.title}")
+        lines.append("")
     for index, entry in enumerate(brief.entries, 1):
         lines.append(f"{index}. {entry.title}")
         corroboration = f" ({entry.corroboration} outlets)" if entry.corroboration > 3 else ""

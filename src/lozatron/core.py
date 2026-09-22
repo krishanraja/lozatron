@@ -174,6 +174,32 @@ TRACKING_PARAMS = frozenset({
     "__twitter_impression", "_hsenc", "_hsmi", "vgo_ee", "sh",
 })
 
+def clean_link(value: str) -> str:
+    """Strip tracking parameters from a URL that a human will click.
+
+    Distinct from `normalize_url`, which also lowercases the host, drops `www.`
+    and sorts the query, because that is right for a fingerprint and wrong for
+    a link: some hosts genuinely need `www.`, and a reordered query is a
+    gratuitous difference from what the publisher published. This only removes
+    the campaign noise, so a Glossy link stops arriving with
+    `?utm_campaign=glossydis&utm_medium=rss` trailing off the end of it.
+    """
+    try:
+        parts = urllib.parse.urlsplit(value.strip())
+        if not parts.query:
+            return value.strip()
+        kept = [
+            (key, val)
+            for key, val in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
+            if key.lower() not in TRACKING_PARAMS
+        ]
+        return urllib.parse.urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(kept), parts.fragment)
+        )
+    except ValueError:
+        return value.strip()
+
+
 # Both fingerprint schemes are written while this date stands, so the ledger
 # entries made before the query-string fix keep suppressing. Remove the v1
 # fallback and this constant after 2026-12-20, one full prune() cycle on.
