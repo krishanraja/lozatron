@@ -154,3 +154,54 @@ def test_preview_without_ops_address_sends_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(app.gmail, "send", boom)
     result = app.preview("briefing", tmp_path / "d.json")
     assert result["sent"] is False and result["recipients"] == 0
+
+
+# --- the safety rules are unconditional ---
+
+def test_selection_is_clustered_even_with_every_flag_unset(tmp_path, monkeypatch):
+    """The flood's first cause: LOZ_CLUSTERING was set on one workflow only.
+
+    Selection must not consult any environment variable to decide whether the
+    corroboration rule, the per-source cap and the score floor apply.
+    """
+    for name in ("LOZ_CLUSTERING", "LOZ_ANALYST", "LOZ_CORROBORATION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(app, "utcnow", lambda: NOW)
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+    result = app.run("briefing", tmp_path / "d.json", tmp_path / "s.json", dry_run=True)
+    assert result["clustering"] is True
+
+
+def test_an_uncorroborated_community_story_is_never_selected(tmp_path, monkeypatch):
+    """What actually reached Lauren: a lone Reddit post, no second source."""
+    lone = Story(
+        title="Can't monetize my videos even after getting accepted",
+        url="https://www.reddit.com/r/PartneredYoutube/x",
+        source="r/PartneredYoutube",
+        published_at=NOW - dt.timedelta(hours=1),
+        summary="Creator monetization brand deal partnership revenue",
+        tier="community",
+    )
+    monkeypatch.delenv("LOZ_CLUSTERING", raising=False)
+    monkeypatch.setattr(app, "utcnow", lambda: NOW)
+    monkeypatch.setattr(app, "collect", fake_collect([lone]))
+    result = app.run("briefing", tmp_path / "d.json", tmp_path / "s.json", dry_run=True)
+    assert result["stories_selected"] == 0
+    assert result["sent"] is False
+
+
+def test_the_daily_ceiling_suppresses_a_send_beyond_the_cap(tmp_path, monkeypatch):
+    path = tmp_path / "d.json"
+    state = DeliveryState(path)
+    state.sends = {NOW.date().isoformat(): DeliveryState.MAX_SENDS_PER_DAY}
+    state.save()
+    monkeypatch.setattr(app, "utcnow", lambda: NOW)
+    monkeypatch.setattr(app, "collect", fake_collect([story()]))
+
+    def boom(*a, **k):
+        raise AssertionError("send attempted past the daily ceiling")
+
+    monkeypatch.setattr(app.gmail, "send", boom)
+    result = app.run("briefing", path, tmp_path / "s.json", dry_run=False)
+    assert result["ceiling_hit"] is True
+    assert result["sent"] is False

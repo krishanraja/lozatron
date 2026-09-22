@@ -18,10 +18,15 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 EASTERN = "America/New_York"
-SLOTS_ET: tuple[int, ...] = (9, 14, 18)
+# One brief a day, at 9am Eastern. PRIORITIES.md asked for exactly this; three
+# slots was an assumption nobody made. The slot ledger then guarantees one
+# delivery per slot, so one slot means one email a day however many times
+# GitHub fires the workflow.
+SLOTS_ET: tuple[int, ...] = (9,)
 
-# Shorter than the 5-hour gap between slots, so a wholly missed slot is never
-# resurrected on top of the next one.
+# Wide enough to absorb the observed 2.6-hour Actions delay, and far shorter
+# than the 24-hour gap between slots, so a wholly missed slot is never
+# resurrected on top of the next day's.
 GRACE_MINUTES = 200
 
 

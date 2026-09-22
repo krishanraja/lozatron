@@ -128,23 +128,24 @@ def run(
     # result, and still ships the deterministic brief, so its output can be read
     # before Lauren ever sees it.
     analyst_mode = env_text("LOZ_ANALYST", "off").lower()
-    if mode == "breaking":
-        # Breaking exists to get three stories out fast. Running the model on
-        # every 90-minute check quadruples spend and adds 16 daily chances for
-        # the critical path to fail, for a format that gains nothing from it.
-        analyst_mode = "off"
-    clustering = env_flag("LOZ_CLUSTERING") or analyst_mode != "off"
-    if clustering:
-        clusters = select_clusters(
-            stories, state.contains, now=now, window_hours=window, limit=limit
-        )
-        selected = [cluster.leader for cluster in clusters]
-        to_mark = [member for cluster in clusters for member in cluster.members]
-        corroboration = {cluster.leader.key: cluster.corroboration for cluster in clusters}
-    else:
-        selected = select_stories(stories, state.keys(), now=now, window_hours=window, limit=limit)
-        to_mark = selected
-        corroboration = {}
+
+    # Selection is clustered, corroborated and capped unconditionally. It used
+    # to sit behind LOZ_CLUSTERING, which was set on one of the two workflows;
+    # the other kept running the ungated path and mailed Lauren uncorroborated
+    # Reddit posts. A rule whose job is preventing bad mail must not be
+    # switchable by a missing environment variable, so there is no longer a
+    # variable and no longer an alternative path.
+    #
+    # `to_mark` carries every cluster member, so outlet B's copy is suppressed
+    # the moment outlet A's ships -- the cross-outlet duplicate closes without
+    # a second dedup concept.
+    clustering = True
+    clusters = select_clusters(
+        stories, state.contains, now=now, window_hours=window, limit=limit
+    )
+    selected = [cluster.leader for cluster in clusters]
+    to_mark = [member for cluster in clusters for member in cluster.members]
+    corroboration = {cluster.leader.key: cluster.corroboration for cluster in clusters}
 
     # The analyst scores and explains within the gated set. It never adds a
     # story, never reorders, and never decides how many ship.

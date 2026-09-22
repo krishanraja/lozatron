@@ -34,45 +34,24 @@ FEEDS = (
     ("Kajabi", "https://kajabi.com/blog/rss.xml"),
 )
 
-# Primary sources: the creator, platform or agency announcing it themselves.
-# "Creator news breaks on social media BEFORE it hits trade publications."
-# YouTube publishes a free RSS feed per channel, so the layer Lauren asked for
-# first costs nothing. Paid scraping is an escalation on top, not the mechanism.
-YOUTUBE_CHANNELS = (
-    ("MrBeast", "UCX6OQ3DkcsbYNE6H8uQQuVA"),
-    ("KSI", "UCVtFOytbRpEvzLjvqGG5gxQ"),
-    ("Sidemen", "UCo8bcnLyZH8tBIH9V1mLgqQ"),
-    ("Markiplier", "UC7_YxT-KID8kRbqZo7MyscQ"),
-    ("Colin and Samir", "UCwayCyXbToTPxYJUBcEx74g"),
-    ("MKBHD", "UCG7J20LhUeLl6y_Emi7OJrA"),
-    ("Emma Chamberlain", "UCJvR4zNAPRJoMDF3A912dBA"),
-    ("Dude Perfect", "UCJrWyyCRROi8NlQ6Xd9dx5Q"),
-    ("Rhett and Link", "UC4PooiX37Pld1T8J5SYT-SQ"),
-    ("Alix Earle", "UCT_CSXR_a20b1_fR6VMjp_A"),
-    ("Tinx", "UCd-WxxEal6fupgs-nbJJz3Q"),
-    ("Doctor Mike", "UC0QHWhjbe5fGJEPz3sVb6nw"),
-    ("Hank Green", "UC_dvqFmaVUj16kRKSLYBaSw"),
-)
-
-# Reddit is signal, not proof. These are ingested, but a story that appears ONLY
-# on Reddit is never delivered on its own -- it has to be corroborated by a
-# primary or trade source first.
-SUBREDDITS = (
-    "youtube", "creators", "NewTubers", "BestOfYouTube", "LivestreamFail",
-    "PublicFigures", "CreatorEconomy", "PartneredYoutube", "InfluencerMarketing",
-    "Substack",
-)
-
-# A creator uploading "I SIGNED WITH NETFLIX" is the signal; the rest of their
-# upload schedule is not. Without this, thirteen channels of routine uploads
-# drown the candidate pool.
-PRIMARY_BUSINESS_TERMS = (
-    "deal", "partner", "sign", "acqui", "fund", "launch", "brand", "sponsor",
-    "studio", "series", "film", "podcast", "collab", "compan", "invest",
-    "contract", "exclusive", "netflix", "amazon", "spotify", "hulu", "apple",
-    "disney", "million", "billion", "announce", "new venture", "merch", "tour",
-    "book", "raise", "equity", "stake", "acquisition", "ceo", "hire",
-)
+# Removed on evidence, 2026-09-22: YouTube channel RSS and subreddit RSS.
+#
+# Both were added to honour Lauren's recorded "primary-first" rule. Measured
+# over two days they degraded the brief rather than improving it:
+#
+#   Reddit contributed 125 of 373 pool items and close to zero signal. Nothing
+#   it surfaced was ever corroborated elsewhere, which is the bar her own rule
+#   sets ("signal, never proof"), so it only ever added volume: tech-support
+#   questions, beginner advice and streamer drama.
+#
+#   YouTube channel RSS returns a channel's last fifteen uploads regardless of
+#   age, so items were weeks stale, the business-term filter matched on "book"
+#   and "million", and the one item that reached Lauren was a sponsored post.
+#
+# The primary layer that works is the paid one -- the X scraper and the YouTube
+# community-posts actor in apify.py, which carry a real freshness field. Free
+# RSS is not a substitute for it, and pretending otherwise is what produced the
+# flood. Do not reinstate either without evidence they corroborate.
 
 NEWS_QUERIES = (
     "creator economy OR creator monetization OR influencer marketing",
@@ -83,7 +62,6 @@ NEWS_QUERIES = (
 # Podnews alone ships ~2.3 MB, and the previous 2 MB cap truncated it mid-XML
 # on every run, which surfaced only as an opaque ParseError.
 FEED_READ_LIMIT = 12_000_000
-YOUTUBE_FEED = "https://www.youtube.com/feeds/videos.xml?channel_id="
 
 
 def _fetch(url: str, *, timeout: int = 20) -> bytes:
@@ -135,34 +113,6 @@ def _parse_feed(source: str, url: str, current: dt.datetime, tier: str,
     return out
 
 
-def primary_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[str]]:
-    """Creator channels and community chatter. Free, and Lauren's first priority."""
-    current = now or utcnow()
-    rows: list[Story] = []
-    errors: list[str] = []
-
-    for name, channel_id in YOUTUBE_CHANNELS:
-        try:
-            found = _parse_feed(name, f"{YOUTUBE_FEED}{channel_id}", current, "primary", limit=15)
-            # An upload title only counts when it announces business.
-            rows.extend(
-                item for item in found
-                if any(term in item.title.lower() for term in PRIMARY_BUSINESS_TERMS)
-            )
-        except Exception as exc:
-            errors.append(f"YouTube/{name}: {type(exc).__name__}")
-
-    for sub in SUBREDDITS:
-        try:
-            rows.extend(_parse_feed(f"r/{sub}", f"https://www.reddit.com/r/{sub}/new/.rss",
-                                    current, "community", limit=25))
-        except Exception as exc:
-            # Reddit throttles datacenter IPs hard; a 429 is expected and is not
-            # a failure of the run.
-            errors.append(f"Reddit/{sub}: {type(exc).__name__}")
-    return rows, errors
-
-
 def rss_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[str]]:
     current = now or utcnow()
     rows: list[Story] = []
@@ -209,10 +159,13 @@ def newsapi_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[s
 
 
 def collect(now: dt.datetime | None = None) -> tuple[list[Story], list[str]]:
-    """Primary first, then trade as the confirmation layer, then NewsAPI."""
-    primary_rows, primary_errors = primary_stories(now)
+    """Trade feeds, then NewsAPI.
+
+    The free primary layer was removed; see the note above the source lists.
+    Paid primary sources are collected separately in `apify.collect_paid` and
+    joined by the caller, so the escalation path is intact.
+    """
     rss_rows, rss_errors = rss_stories(now)
     news_rows, news_errors = newsapi_stories(now)
-    return (primary_rows + rss_rows + news_rows,
-            primary_errors + rss_errors + news_errors)
+    return rss_rows + news_rows, rss_errors + news_errors
 

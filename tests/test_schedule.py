@@ -35,8 +35,21 @@ def test_slot_missed_beyond_grace_is_not_resurrected():
 
 
 def test_newest_due_slot_wins_when_two_are_outstanding():
+    # Multi-slot behaviour still matters: an operator can widen the schedule
+    # with LOZ_BRIEF_SLOTS_ET, and a run that is late for two slots must
+    # deliver the current one rather than the stale one.
     # 18:00 EDT = 22:00 UTC. Both 14:00 and 18:00 are unrecorded; take 18.
-    assert due_slot(utc(2026, 9, 21, 22, 1), set()) == "2026-09-21T18"
+    slots = (9, 14, 18)
+    assert due_slot(utc(2026, 9, 21, 22, 1), set(), slots=slots) == "2026-09-21T18"
+
+
+def test_default_schedule_is_one_slot_a_day():
+    # The flood: sixteen breaking checks plus three briefing slots. One brief a
+    # day is what PRIORITIES.md asked for, and the default must encode it.
+    from lozatron.schedule import SLOTS_ET
+    assert SLOTS_ET == (9,)
+    # 18:00 EDT = 22:00 UTC. Nothing is due, because there is no evening slot.
+    assert due_slot(utc(2026, 9, 21, 22, 1), set()) is None
 
 
 def test_slot_boundaries_follow_dst_not_fixed_offset():
@@ -65,5 +78,5 @@ def test_slot_key_is_date_and_eastern_hour():
 def test_parse_slots_falls_back_to_default_on_junk():
     assert parse_slots("9,14,18") == (9, 14, 18)
     assert parse_slots("18,9") == (9, 18)
-    assert parse_slots("") == (9, 14, 18)
-    assert parse_slots("banana,99") == (9, 14, 18)
+    assert parse_slots("") == (9,)
+    assert parse_slots("banana,99") == (9,)

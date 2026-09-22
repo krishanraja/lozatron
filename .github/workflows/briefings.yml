@@ -2,7 +2,11 @@ name: Lozatron briefings
 
 on:
   schedule:
-    - cron: "0 9,14,18 * * *"
+    # One brief a day, 9am Eastern. The extra slots plus the retired
+    # breaking-news workflow were how sixteen possible emails a day happened.
+    # The slot ledger caps delivery at one per slot, so a delayed or repeated
+    # run still produces exactly one email.
+    - cron: "0 9 * * *"
       timezone: "America/New_York"
   workflow_dispatch:
     inputs:
@@ -61,7 +65,6 @@ jobs:
           LOZ_LLM_MONTHLY_USD_CAP: ${{ vars.LOZ_LLM_MONTHLY_USD_CAP }}
           LOZ_LLM_USD_PER_MTOK_IN: ${{ vars.LOZ_LLM_USD_PER_MTOK_IN }}
           LOZ_LLM_USD_PER_MTOK_OUT: ${{ vars.LOZ_LLM_USD_PER_MTOK_OUT }}
-          LOZ_CLUSTERING: ${{ vars.LOZ_CLUSTERING || 'true' }}
         timeout-minutes: 8
         run: lozatron --mode briefing ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
       - name: Save delivery state
