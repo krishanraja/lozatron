@@ -240,8 +240,12 @@ class Cluster:
         member is community chatter is not deliverable. Left unenforced, the
         subreddits flood the pool with tech-support questions, beginner advice
         and streamer drama, which is exactly what it produced when measured.
+
+        Social is held to the same bar for the same reason. A cluster needs at
+        least one member that is reporting -- trade, primary or analysis --
+        before it can ship as a story.
         """
-        return self.tiers != {"community"}
+        return bool(self.tiers - {"community", "social"})
 
     @property
     def primary(self) -> bool:
@@ -287,7 +291,12 @@ def select_clusters(
     the event is not new, whichever outlet's copy arrived first. Ordering stays
     with the deterministic `rank`, applied to the cluster leader.
     """
-    fresh = [story for story in stories if eligible(story, now, window_hours)]
+    # Social never enters the story path at all. Not gated, not ranked, not
+    # capped -- excluded, because the reliable way to guarantee a post never
+    # appears as a numbered entry is for it never to be a candidate. It is
+    # routed to `commentary()` instead.
+    newsworthy = [story for story in stories if story.tier != "social"]
+    fresh = [story for story in newsworthy if eligible(story, now, window_hours)]
     clusters = [
         cluster for cluster in build_clusters(fresh)
         if cluster.confirmed and not any(delivered(member) for member in cluster.members)
@@ -298,11 +307,15 @@ def select_clusters(
         # Corroboration is earned evidence: two independent outlets carrying
         # the same event is the strongest non-model signal available.
         cluster.relevance += min(2, cluster.corroboration - 1)
-        # A creator announcing their own deal outranks a trade write-up of the
-        # same deal. Lauren's triage rule, +3.
-        if cluster.primary:
-            cluster.score += 3
-            cluster.relevance += 3
+        # The +3 primary bonus that used to live here has been removed.
+        #
+        # It was built from the recorded triage rule "a creator's own tweet
+        # about a deal outranks a Deadline story about the same deal". In
+        # practice that ranks one person's post above reporting, which is the
+        # opposite of what the brief is for: a post is commentary and gets
+        # handled as commentary. Nothing in the pool has ever carried the
+        # "primary" tier, so removing it changes no output today -- it removes
+        # a trap that would have fired the moment paid sources came on.
         cluster.freshness = freshness_tier(cluster.leader, now)
         cluster.age_hours = max(0, round((now - cluster.leader.published_at).total_seconds() / 3600))
     floor = int(os.environ.get("LOZ_MIN_RELEVANCE") or MIN_RELEVANCE)
@@ -330,3 +343,94 @@ def cap_per_source(clusters: list[Cluster], limit: int, per_source: int = 2) -> 
         if len(kept) >= limit:
             break
     return kept
+
+
+# --- commentary: what individuals are saying, never what happened -----------
+
+# A pattern needs this many DISTINCT accounts before it is worth a line. Two
+# people posting the same thought is a coincidence; it is also exactly how a
+# single loud thread gets mistaken for a trend.
+PATTERN_MIN_ACCOUNTS = 3
+
+# How closely a post has to track a story before it counts as chatter about
+# that story. Lower than the story-merge bar, because a post paraphrases
+# rather than reproduces a headline, and it is only ever attaching a count --
+# a wrong attachment costs a number, not a false story.
+COMMENTARY_MATCH = 40
+
+
+@dataclasses.dataclass(slots=True)
+class Pattern:
+    """A theme several independent accounts converged on, with no story behind it."""
+    tokens: frozenset[str]
+    accounts: list[str] = dataclasses.field(default_factory=list)
+    posts: list[Story] = dataclasses.field(default_factory=list)
+
+    @property
+    def label(self) -> str:
+        """The shared words, longest first, as a plain phrase."""
+        return " ".join(sorted(self.tokens, key=len, reverse=True)[:4])
+
+
+def _account(story: Story) -> str:
+    return story.title.strip().casefold() or story.url
+
+
+def attach_commentary(clusters: list[Cluster], social: list[Story]) -> dict[str, list[Story]]:
+    """Map cluster key -> posts discussing it.
+
+    Commentary attaches to reporting; it never becomes reporting. A cluster
+    that picks up chatter is a cluster we can say is being talked about, which
+    is a genuinely useful signal for a President deciding what to cover. It
+    does not change the cluster's rank, because how loud a story is on social
+    is not the same as how much it matters.
+    """
+    if not clusters or not social:
+        return {}
+    found: dict[str, list[Story]] = {}
+    for post in social:
+        post_tokens, _ = canon_tokens(post.summary[:280])
+        if not post_tokens:
+            continue
+        best, best_score = None, 0
+        for cluster in clusters:
+            score = similarity(cluster.tokens, post_tokens)
+            if score > best_score:
+                best, best_score = cluster, score
+        if best is not None and best_score >= COMMENTARY_MATCH:
+            found.setdefault(best.key, []).append(post)
+    return found
+
+
+def find_patterns(social: list[Story], attached: dict[str, list[Story]],
+                  *, min_accounts: int = PATTERN_MIN_ACCOUNTS) -> list[Pattern]:
+    """Themes that several independent accounts raised, with no story behind them.
+
+    This is the only route by which social reaches the brief on its own, and
+    it reaches it as an aggregate -- "several creators are discussing X" --
+    never as a quoted post. One person's opinion is not news and is not
+    interesting; a dozen people independently raising the same thing is a
+    signal about where the industry's attention is.
+
+    Posts already attached to a story are excluded, because their theme is
+    that story and reporting it twice would be padding.
+    """
+    used = {post.url for posts in attached.values() for post in posts}
+    loose = [post for post in social if post.url not in used]
+    patterns: list[Pattern] = []
+    for post in sorted(loose, key=lambda item: item.url):
+        tokens, _ = canon_tokens(post.summary[:280])
+        if len(tokens) < 3:
+            continue
+        for pattern in patterns:
+            if similarity(pattern.tokens, tokens) >= COMMENTARY_MATCH:
+                pattern.tokens &= tokens
+                pattern.posts.append(post)
+                if _account(post) not in pattern.accounts:
+                    pattern.accounts.append(_account(post))
+                break
+        else:
+            patterns.append(Pattern(tokens=tokens, accounts=[_account(post)], posts=[post]))
+    # Distinct accounts, not distinct posts: one person posting six times is
+    # one person, and counting posts is how a single thread becomes a "trend".
+    return [item for item in patterns if len(item.accounts) >= min_accounts]

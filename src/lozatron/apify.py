@@ -293,14 +293,51 @@ def _settled_cost(run_id: str, token: str) -> float | None:
         return None
 
 
+# What each paid profile actually produces. Until this existed every paid story
+# was tagged "trade" by omission, which had two consequences that only look
+# small on paper:
+#
+#   `Cluster.confirmed` rejects a cluster whose members are all "community".
+#   Reddit rows were arriving as "trade", so the guard written specifically to
+#   stop uncorroborated Reddit reaching Lauren was protecting nothing. The
+#   flood mechanism, sitting dormant behind a feature flag.
+#
+#   Social posts ranked as news. A post is commentary from one person; it is
+#   not a report, and it must never sit in the numbered list next to a trade
+#   story. "social" is handled by the commentary layer, never as an entry.
+PROFILE_TIERS = {
+    "x_creator": "social",
+    "youtube_community": "social",
+    "reddit_creator": "community",
+}
+
+
 def _as_story(profile: str, row: dict[str, Any]) -> Story | None:
-    title = str(row.get("title") or row.get("text") or row.get("body") or row.get("content") or "").strip()
+    text = str(row.get("text") or row.get("body") or row.get("content") or "").strip()
+    title = str(row.get("title") or "").strip()
     url = str(row.get("url") or row.get("postUrl") or row.get("tweetUrl") or row.get("link") or "").strip()
     published = parse_datetime(str(row.get("createdAt") or row.get("publishedAt") or row.get("date") or row.get("timestamp") or ""))
+    tier = PROFILE_TIERS.get(profile, "community")
+
+    # A post has no headline, and pretending its first 500 characters are one
+    # is how "Making your first time simple #TidePartner" shipped to Lauren as
+    # a breaking creator-business update. For social the text is the body and
+    # the author is the label; the commentary layer never renders a headline.
+    if tier == "social":
+        author = str(row.get("author") or row.get("username") or row.get("authorName") or "").strip()
+        if not text or not url or published is None:
+            return None
+        return Story(
+            title=(author or profile)[:120], url=url, source=f"Apify/{profile}",
+            published_at=published, summary=text[:1000], tier=tier,
+        )
+
+    title = title or text
     if not title or not url or published is None:
         return None
-    summary = str(row.get("description") or row.get("text") or row.get("body") or "")
-    return Story(title=title[:500], url=url, source=f"Apify/{profile}", published_at=published, summary=summary[:1000])
+    summary = str(row.get("description") or text)
+    return Story(title=title[:500], url=url, source=f"Apify/{profile}",
+                 published_at=published, summary=summary[:1000], tier=tier)
 
 
 def collect_paid(spend_path: Path, now: dt.datetime | None = None) -> tuple[list[Story], list[str], bool]:
