@@ -340,6 +340,17 @@ def _matchers():
     return _DOMAIN, _BUSINESS, _SOFT, _STRONG, _CREATOR, _CORE
 
 
+# Feeds append promotional footers to the end of every description, so only the
+# opening of a summary is the article. 400 characters is the lede and a little
+# more; past that it is reliably the publisher talking about itself.
+GATE_SUMMARY_CHARS = 400
+
+
+def gate_text(story: Story) -> str:
+    """Title plus the part of the summary that is actually the article."""
+    return f"{story.title} {clean_feed_text(story.summary, GATE_SUMMARY_CHARS)}"
+
+
 def passes_hard_gates(story: Story, now: dt.datetime, window_hours: int) -> bool:
     """Non-negotiable, model-independent rejection. Freshness and obvious junk."""
     age = (now - story.published_at).total_seconds() / 3600
@@ -371,8 +382,12 @@ def candidate(story: Story, now: dt.datetime, window_hours: int) -> bool:
         return True
     _, _, _, _, _, core = _matchers()
     # In the domain means creator-specific, not merely commercial. A film
-    # festival is a festival; it is not creator business.
-    return bool(core.search(f"{story.title} {story.summary}"))
+    # festival is a festival; it is not creator business. Same headline rule as
+    # `eligible`, and for a second reason besides noise: this count is what
+    # `paid_sources_due` reads to decide whether the free pool is thick enough
+    # to skip paying. Boilerplate matches inflate it and silently retire the
+    # paid layer.
+    return bool(core.search(story.title))
 
 
 def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
@@ -391,20 +406,35 @@ def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
     """
     if not passes_hard_gates(story, now, window_hours):
         return False
-    text = f"{story.title} {story.summary}"
+    text = gate_text(story)
     # A creator's own announcement is already business-filtered at ingest and
     # does not have to say the word "creator" to be creator news.
     if story.tier == "primary":
         return True
     _, business, soft, strong, _, core = _matchers()
-    # Creator-specific, not merely commercial. Film festivals and studio hires
-    # are media news; they reached a live brief when this asked only for a
-    # domain term, because "kick" matched "kick off" and the trades call
-    # Netflix a streamer.
-    if not core.search(text):
+    # THE CREATOR TERM MUST BE IN THE HEADLINE.
+    #
+    # It used to be enough for it to appear anywhere in the summary, and feeds
+    # append promotional footers -- "follow us on Instagram and YouTube",
+    # "subscribe to our newsletter", "we're hiring" -- to every single item.
+    # Measured live: all three Axios stories that passed this gate were
+    # political. "Many ex-aides to Harris betting against a 2028 run" matched
+    # on `youtube`, `launch`, `signs` and `hiring`, none of which appear in the
+    # article. Influencer Marketing Hub carries 2,363 characters of such
+    # boilerplate per item.
+    #
+    # A story genuinely about the creator economy says so in its headline. On
+    # the live pool this costs exactly one story, "Japan Pitch Heads to Busan
+    # Film Festival", which was itself a false positive.
+    if not core.search(story.title):
         return False
     if not business.search(text):
         return False
+    # An analysis piece is an explainer by design; that is the point of it, so
+    # the soft veto that protects the news list from tips and listicles must
+    # not apply to the mechanics track.
+    if story.tier == "analysis":
+        return True
     if soft.search(text) and not strong.search(text):
         return False
     return True

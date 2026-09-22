@@ -112,7 +112,12 @@ def _first(node: ET.Element, names: Iterable[str]) -> ET.Element | None:
 
 def _parse_feed(source: str, url: str, current: dt.datetime, tier: str,
                 limit: int = 40) -> list[Story]:
-    root = ET.fromstring(_fetch(url))
+    # `.lstrip()` is load-bearing. ElementTree refuses bytes with anything
+    # before the XML declaration -- "XML or text declaration not at start of
+    # entity" -- and Nieman Lab, among others, serves a leading newline. That
+    # surfaced only as the word "ParseError" in a swallowed error list, so a
+    # perfectly good feed looked dead for as long as it was in the list.
+    root = ET.fromstring(_fetch(url).lstrip())
     entries = [node for node in root.iter()
                if node.tag.rsplit("}", 1)[-1].lower() in {"item", "entry"}]
     out: list[Story] = []
