@@ -159,6 +159,23 @@ def render_text(brief: Brief) -> str:
         else:
             lines.append(f"   {clean_feed_text(entry.summary, 400)}")
         lines += [f"   {entry.url}", ""]
+    if brief.patterns:
+        lines += ["BEING DISCUSSED (unconfirmed)", ""]
+        lines += [f"  {line}" for line in brief.patterns]
+        lines += ["  Commentary from individual social accounts, not reporting.", ""]
+    if brief.mechanics:
+        lines += ["HOW IT WORKS", "Mechanics and ideas from the wider media business.", ""]
+        for entry in brief.mechanics:
+            lines.append(f"   {entry.title}")
+            lines.append(f"   {entry.outlet_line}")
+            if entry.analysed:
+                if entry.why_it_matters:
+                    lines.append(f"   The mechanic: {entry.why_it_matters}")
+                if entry.what_to_watch:
+                    lines.append(f"   Worth borrowing: {entry.what_to_watch}")
+            else:
+                lines.append(f"   {clean_feed_text(entry.summary, 320)}")
+            lines += [f"   {entry.url}", ""]
     if brief.filtered:
         summary = ", ".join(f"{count} {reason}" for reason, count in sorted(brief.filtered.items()))
         lines += [f"Filtered: {summary}.", ""]
@@ -166,6 +183,39 @@ def render_text(brief: Brief) -> str:
 
 
 # --- html ------------------------------------------------------------------
+
+def _mechanic(entry: Entry) -> str:
+    """A mechanics item. Unnumbered, so it cannot be read as story N+1."""
+    body = []
+    if entry.analysed:
+        if entry.why_it_matters:
+            body.append(
+                f'<p style="margin:0 0 8px;font-size:15px;line-height:1.55;color:{INK};">'
+                f'<strong style="font-weight:600;">The mechanic.</strong> '
+                f'{_t(entry.why_it_matters)}</p>'
+            )
+        if entry.what_to_watch:
+            body.append(
+                f'<p style="margin:0 0 8px;font-size:15px;line-height:1.55;color:{INK};">'
+                f'<strong style="font-weight:600;">Worth borrowing.</strong> '
+                f'{_t(entry.what_to_watch)}</p>'
+            )
+    if not body:
+        body.append(
+            f'<p style="margin:0 0 8px;font-size:15px;line-height:1.55;color:{INK};">'
+            f'{_feed(entry.summary, 320)}</p>'
+        )
+    return (
+        f'<tr><td style="padding:0 0 22px;">'
+        f'<p style="margin:0 0 4px;font-size:17px;line-height:1.35;font-weight:600;">'
+        f'<a href="{_t(entry.url, 900)}" style="color:{LINK};text-decoration:underline;'
+        f'text-underline-offset:3px;">{_t(entry.title, 300)}</a></p>'
+        f'<p style="margin:0 0 8px;font-family:{MONO};font-size:12px;color:{MUTED};">'
+        f'{_t(entry.outlet_line)}</p>'
+        + "".join(body) +
+        f'</td></tr>'
+    )
+
 
 def _story(entry: Entry, index: int) -> str:
     # The corroboration count only earns its place once the outlet line has
@@ -266,6 +316,37 @@ def render_html(brief: Brief) -> str:
 
     for index, entry in enumerate(brief.entries, 1):
         rows.append(_story(entry, index))
+
+    if brief.patterns:
+        # Aggregate only. A post is one person's opinion and is not reporting,
+        # so it never gets a headline, a number or a quote -- it reaches her
+        # as "several accounts are discussing X" and is labelled as such, so
+        # she can tell at a glance that nobody has confirmed any of it.
+        items = "".join(
+            f'<p style="margin:0 0 6px;font-size:15px;line-height:1.5;color:{INK};">'
+            f'{_t(line, 200)}</p>'
+            for line in brief.patterns
+        )
+        rows.append(
+            f'<tr><td style="padding:4px 0 30px;">'
+            f'<p style="margin:0 0 10px;font-family:{MONO};font-size:12px;letter-spacing:.08em;'
+            f'text-transform:uppercase;color:{MUTED};">Being discussed &middot; unconfirmed</p>'
+            f'{items}'
+            f'<p style="margin:10px 0 0;font-size:13px;line-height:1.5;color:{MUTED};">'
+            f'Commentary from individual social accounts, not reporting.</p>'
+            f'</td></tr>'
+        )
+
+    if brief.mechanics:
+        rows.append(
+            f'<tr><td style="padding:26px 0 14px;border-top:1px solid {RULE};">'
+            f'<p style="margin:0 0 4px;font-family:{MONO};font-size:12px;letter-spacing:.08em;'
+            f'text-transform:uppercase;color:{MUTED};">How it works</p>'
+            f'<p style="margin:0;font-size:14px;line-height:1.5;color:{MUTED};">'
+            f'Mechanics and ideas from the wider media business.</p></td></tr>'
+        )
+        for entry in brief.mechanics:
+            rows.append(_mechanic(entry))
 
     if brief.filtered:
         summary = ", ".join(f"{count} {_t(reason, 40)}" for reason, count in sorted(brief.filtered.items()))

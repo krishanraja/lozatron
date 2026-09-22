@@ -9,12 +9,12 @@ from pathlib import Path
 from . import analyst, costs, gmail, render as render_mod, schedule, store
 from .apify import DEFAULT_DAILY_CAP_USD, DEFAULT_MONTHLY_CAP_USD, collect_paid
 from .brief import compose
-from .cluster import select_clusters
+from .cluster import attach_commentary, find_patterns, select_analysis, select_clusters
 from .core import (
     DeliveryState, candidate, eligible, env_flag, env_float, env_int, env_text,
     passes_hard_gates, render_email, select_stories, utcnow,
 )
-from .sources import collect
+from .sources import analysis_stories, collect
 
 
 def edition_id(mode: str, slot: str | None, now: dt.datetime) -> str:
@@ -97,6 +97,16 @@ def run(
     window = 8 if mode == "breaking" else 48
     limit = 3 if mode == "breaking" else 10
 
+    # The mechanics pool is fetched and carried separately end to end. It has
+    # its own seven-day window, so merging it into `stories` would let essays
+    # outnumber the news on any quiet day -- and rule 2 says the answer to a
+    # quiet day is a short brief, not a padded one.
+    mechanics: list = []
+    if mode == "briefing":
+        analysis_pool, analysis_errors = analysis_stories(now)
+        source_errors.extend(analysis_errors)
+        mechanics = select_analysis(analysis_pool, state.contains, now=now)
+
     # Count what the free sources produced before deciding to pay for more.
     free_candidates = sum(1 for item in stories if candidate(item, now, window))
     paid_changed = False
@@ -146,16 +156,32 @@ def run(
     selected = [cluster.leader for cluster in clusters]
     to_mark = [member for cluster in clusters for member in cluster.members]
     corroboration = {cluster.leader.key: cluster.corroboration for cluster in clusters}
+    # Mechanics items are marked as delivered so they are not repeated, but
+    # they never enter `selected` -- they are not stories and do not count
+    # toward the limit or the empty-brief check.
+    to_mark += [member for cluster in mechanics for member in cluster.members]
+
+    # Social reaches the brief only in aggregate. It attaches to a story as a
+    # count, or becomes one line when several distinct accounts converge on a
+    # theme with nothing reported behind it. Never as an entry, never quoted.
+    social = [item for item in stories if item.tier == "social"]
+    commentary = attach_commentary(clusters, social)
+    patterns = [
+        f"{len(item.accounts)} accounts discussing {item.label}"
+        for item in find_patterns(social, commentary)
+    ]
 
     # The analyst scores and explains within the gated set. It never adds a
     # story, never reorders, and never decides how many ship.
     analysis, analysis_reason = (None, "off")
     document = None
     archive_reason = "not_attempted"
-    if analyst_mode != "off" and clusters:
+    # Mechanics items go to the analyst alongside the news, so they arrive
+    # explained rather than as a bare headline and a feed blurb.
+    if analyst_mode != "off" and (clusters or mechanics):
         ledger = analyst.LlmLedger(spend_path.parent / "llm_spend.json").load()
         analysis, analysis_reason = analyst.analyse(
-            clusters, recent,
+            clusters + mechanics, recent,
             ledger=ledger,
             cap_usd=env_float("LOZ_LLM_DAILY_USD_CAP", 2.00),
             monthly_cap_usd=env_float("LOZ_LLM_MONTHLY_USD_CAP", 40.00),
@@ -166,6 +192,7 @@ def run(
             clusters, analysis, mode=mode, slot=slot, now=now,
             degraded="" if analysis_reason in ("ok", "partial_analysis") else analysis_reason,
             filtered=filtered,
+            mechanics=mechanics, commentary=commentary, patterns=patterns,
         )
         try:
             subject, text_body, html_body = render_mod.render(document)
@@ -221,6 +248,9 @@ def run(
         "dry_run": dry_run,
         "sources_seen": len(stories),
         "stories_selected": len(selected),
+        "mechanics_selected": len(mechanics),
+        "commentary_attached": sum(len(v) for v in commentary.values()),
+        "patterns": patterns,
         "sent": sent,
         "ceiling_hit": ceiling_hit,
         "sends_today": state.sends_today(now),
@@ -246,6 +276,16 @@ def compare(mode: str, state_path: Path) -> dict[str, object]:
     stories, source_errors = collect(now)
     window = 8 if mode == "breaking" else 48
     limit = 3 if mode == "breaking" else 10
+
+    # The mechanics pool is fetched and carried separately end to end. It has
+    # its own seven-day window, so merging it into `stories` would let essays
+    # outnumber the news on any quiet day -- and rule 2 says the answer to a
+    # quiet day is a short brief, not a padded one.
+    mechanics: list = []
+    if mode == "briefing":
+        analysis_pool, analysis_errors = analysis_stories(now)
+        source_errors.extend(analysis_errors)
+        mechanics = select_analysis(analysis_pool, state.contains, now=now)
 
     # Counted for the "screened and set aside" line, which answers the standing
     # complaint that rejections were never explained.
@@ -302,6 +342,16 @@ def preview(mode: str, state_path: Path) -> dict[str, object]:
     stories, source_errors = collect(now)
     window = 8 if mode == "breaking" else 48
     limit = 3 if mode == "breaking" else 10
+
+    # The mechanics pool is fetched and carried separately end to end. It has
+    # its own seven-day window, so merging it into `stories` would let essays
+    # outnumber the news on any quiet day -- and rule 2 says the answer to a
+    # quiet day is a short brief, not a padded one.
+    mechanics: list = []
+    if mode == "briefing":
+        analysis_pool, analysis_errors = analysis_stories(now)
+        source_errors.extend(analysis_errors)
+        mechanics = select_analysis(analysis_pool, state.contains, now=now)
 
     # Show what she would actually receive, so already-delivered stories are
     # still suppressed here.

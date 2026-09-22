@@ -23,7 +23,10 @@ import unicodedata
 
 from typing import Callable
 
-from .core import Story, eligible, freshness_tier, normalize_url, rank, relevance
+from .core import (
+    ANALYSIS_WINDOW_HOURS, Story, eligible, eligible_analysis, freshness_tier,
+    normalize_url, rank, relevance,
+)
 
 # Words carrying no discriminating power in a headline.
 STOPWORDS = frozenset("""
@@ -434,3 +437,37 @@ def find_patterns(social: list[Story], attached: dict[str, list[Story]],
     # Distinct accounts, not distinct posts: one person posting six times is
     # one person, and counting posts is how a single thread becomes a "trend".
     return [item for item in patterns if len(item.accounts) >= min_accounts]
+
+
+# --- the mechanics track ----------------------------------------------------
+
+# Two. It is a companion to the news, not a second brief, and rule 2 -- fewer
+# strong items beats a full list -- applies here more than anywhere, because
+# these pieces sit in a seven-day window and would otherwise accumulate.
+MAX_ANALYSIS = 2
+
+
+def select_analysis(stories: list[Story], delivered: Callable[[Story], bool], *,
+                    now, window_hours: int = ANALYSIS_WINDOW_HOURS,
+                    limit: int = MAX_ANALYSIS) -> list[Cluster]:
+    """Pick the mechanics items. Separate path, separate window, separate cap.
+
+    Clustered like the news so two outlets covering the same move collapse,
+    but never merged into the news selection: the seven-day window means these
+    would outnumber the news on any quiet day, and rule 2 says the answer to a
+    quiet day is a short brief, not a padded one.
+
+    Ordered newest first rather than by relevance. Every item here has already
+    cleared a headline-level mechanics gate, so they are of a kind, and the
+    only useful distinction left between them is which one she has not read.
+    """
+    fresh = [item for item in stories if eligible_analysis(item, now, window_hours)]
+    clusters = [
+        cluster for cluster in build_clusters(fresh)
+        if not any(delivered(member) for member in cluster.members)
+    ]
+    for cluster in clusters:
+        cluster.age_hours = max(0, round((now - cluster.leader.published_at).total_seconds() / 3600))
+        cluster.freshness = "mechanics"
+    clusters.sort(key=lambda c: -c.leader.published_at.timestamp())
+    return cap_per_source(clusters, limit, per_source=1)

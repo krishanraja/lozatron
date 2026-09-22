@@ -58,6 +58,19 @@ class Brief:
     degraded: str = ""
     filtered: dict[str, int] = dataclasses.field(default_factory=dict)
 
+    # The mechanics track: how something works, rather than what happened.
+    # Lauren runs The Publish Press, so the news half of this brief competes
+    # with her own product and this half does not. Capped and separate so it
+    # can neither pad the news nor be padded by it.
+    mechanics: list[Entry] = dataclasses.field(default_factory=list)
+
+    # What individuals are saying. Never reporting, always labelled as such.
+    # `commentary` counts chatter attached to a story we already have;
+    # `patterns` are themes several distinct accounts raised with no story
+    # behind them, stated in aggregate and never quoted post by post.
+    commentary: dict[str, int] = dataclasses.field(default_factory=dict)
+    patterns: list[str] = dataclasses.field(default_factory=list)
+
     # Triage only. Flagging most of the brief is not triage, and the model
     # flagged two of three stories on the first live edition, which turned the
     # section into a second copy of the brief above the brief. If it flags at
@@ -86,11 +99,13 @@ def compose(
     now: dt.datetime,
     degraded: str = "",
     filtered: dict[str, int] | None = None,
+    mechanics: list[Any] | None = None,
+    commentary: dict[str, list[Any]] | None = None,
+    patterns: list[Any] | None = None,
 ) -> Brief:
     """Build the document. Cluster order is preserved exactly as ranked."""
-    entries: list[Entry] = []
-    for cluster in clusters:
-        entry = Entry(
+    def to_entry(cluster: Any) -> Entry:
+        return Entry(
             # Titles arrive from feeds carrying entities -- `Alex Cooper&#8217;s`
             # renders literally once the escaper turns the `&` into `&amp;`.
             # Cleaned here, at composition, so the HTML renderer, the plain-text
@@ -104,6 +119,10 @@ def compose(
             freshness=cluster.freshness,
             summary=cluster.leader.summary,
         )
+
+    entries: list[Entry] = []
+    for cluster in clusters:
+        entry = to_entry(cluster)
         judged = analysis.per_cluster.get(cluster.key) if analysis else None
         if judged:
             entry.what_happened = judged.what_happened
@@ -114,6 +133,21 @@ def compose(
             entry.analysed = True
         entries.append(entry)
 
+    mech_entries: list[Entry] = []
+    for cluster in mechanics or []:
+        entry = to_entry(cluster)
+        judged = analysis.per_cluster.get(cluster.key) if analysis else None
+        if judged:
+            # Reuses the news fields deliberately rather than inventing a
+            # parallel schema the analyst's validator would have to learn:
+            # `why_it_matters` carries the mechanism and `what_to_watch`
+            # carries how it applies. The renderer relabels them.
+            entry.what_happened = judged.what_happened
+            entry.why_it_matters = judged.why_it_matters
+            entry.what_to_watch = judged.what_to_watch
+            entry.analysed = True
+        mech_entries.append(entry)
+
     return Brief(
         mode=mode,
         slot=slot,
@@ -122,4 +156,7 @@ def compose(
         lede=analysis.lede if analysis else "",
         degraded=degraded,
         filtered=filtered or {},
+        mechanics=mech_entries,
+        commentary={key: len(posts) for key, posts in (commentary or {}).items()},
+        patterns=[str(item) for item in (patterns or [])],
     )

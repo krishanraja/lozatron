@@ -430,14 +430,86 @@ def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
         return False
     if not business.search(text):
         return False
-    # An analysis piece is an explainer by design; that is the point of it, so
-    # the soft veto that protects the news list from tips and listicles must
-    # not apply to the mechanics track.
-    if story.tier == "analysis":
-        return True
     if soft.search(text) and not strong.search(text):
         return False
     return True
+
+
+# --- the mechanics track -----------------------------------------------------
+#
+# Lauren is President of The Publish Press. A creator-news wire re-reports her
+# own product back to her, so the half of this brief she cannot get anywhere
+# else is HOW things work: unit economics, subscription and event mechanics,
+# what someone else tried and what it earned.
+#
+# These pieces need their own gate, because the news gate is the wrong shape
+# for them in two ways. They do not say "creator" in the headline -- they say
+# "publishers", "subscribers", "monetize" -- so the headline rule rejects all
+# of them. And SOFT_PATTERNS vetoes "explainer", "playbook", "how to" and
+# "guide", which for a mechanics piece is the point rather than a warning sign.
+#
+# Rule 4 ("reject explainers and commentary unless there is a fresh business
+# event") is deliberately NOT relaxed for the news list. It was written to stop
+# padding and it keeps doing that. This is a separate, capped section instead.
+MECHANICS_TERMS = (
+    # money and the model
+    "monetiz*", "monetis*", "revenue", "subscription", "subscriber*", "paywall",
+    "membership", "member*", "pricing", "churn", "retention", "margin",
+    "profit*", "business model", "unit economics", "cpm", "ad revenue",
+    "advertis*", "sponsor*", "licens*", "syndicat*", "commerce", "affiliate",
+    "bundle", "freemium", "deal", "deals",
+    # audience and distribution
+    "audience", "growth", "grow", "grows", "growing", "scale", "scaling",
+    "acquisition", "funnel", "conversion", "traffic", "distribution",
+    "platform", "leverage",
+    # formats and the businesses running them
+    "newsletter", "podcast", "video brand", "event*", "summit", "conference",
+    "publisher*", "publishing", "media company", "creator*",
+    # the shape of a mechanics piece
+    "playbook", "lessons", "learned", "built", "building", "turned",
+    "strateg*", "business", "model",
+)
+
+# Trackers, diaries and link roundups are a publication's furniture, not a
+# piece of thinking. They update forever and would reappear every single day.
+MECHANICS_JUNK = (
+    "tracker", "live tracker", "tracked:", "news diary", "must reads",
+    "week of", "roundup", "weekly round", "what to watch this week",
+)
+
+# Seven days, not 48 hours. These sources publish weekly -- Nieman Lab 9/wk,
+# Press Gazette 10/wk, A Media Operator 6/wk -- and a good piece on how an
+# events business was spun out is just as useful on Friday as on Tuesday.
+# Recency is a news property; it is not a mechanics property.
+ANALYSIS_WINDOW_HOURS = 168
+
+_MECHANICS = None
+
+
+def mechanics_matcher():
+    global _MECHANICS
+    if _MECHANICS is None:
+        _MECHANICS = term_matcher(MECHANICS_TERMS)
+    return _MECHANICS
+
+
+def eligible_analysis(story: Story, now: dt.datetime,
+                      window_hours: int = ANALYSIS_WINDOW_HOURS) -> bool:
+    """The mechanics gate. Matched on the headline only.
+
+    Headline only, deliberately. These are long essays whose bodies mention
+    everything; if the mechanism is the subject of the piece it is in the
+    title, and matching the body would admit anything that name-drops revenue
+    in paragraph nine.
+    """
+    if story.tier != "analysis":
+        return False
+    if not passes_hard_gates(story, now, window_hours):
+        return False
+    title = story.title.lower()
+    if any(term in title for term in MECHANICS_JUNK):
+        return False
+    return bool(mechanics_matcher().search(story.title))
 
 
 # Lauren's freshness rule: 0-8h priority, 8-24h secondary, 24-48h fallback and

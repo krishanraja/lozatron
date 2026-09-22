@@ -54,8 +54,10 @@ ANALYSIS_FEEDS = (
     ("A Media Operator", "https://www.amediaoperator.com/feed/"),
     ("Digital Content Next", "https://digitalcontentnext.org/feed/"),
     ("Simon Owens", "https://simonowens.substack.com/feed"),
-    ("Stratechery", "https://stratechery.com/feed/"),
 )
+# Stratechery was probed and left out: six items in the window, all AI and
+# enterprise software (Salesforce, OpenAI ads, iPhone), none media mechanics.
+# It has drifted away from the beat this track is for.
 
 # Probed and rejected, recorded so nobody re-probes them:
 #   The Publish Press   -- no public RSS; /feed, /rss and the beehiiv paths 404
