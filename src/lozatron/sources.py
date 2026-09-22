@@ -109,9 +109,35 @@ ANALYSIS_FEEDS = (
 # RSS is not a substitute for it, and pretending otherwise is what produced the
 # flood. Do not reinstate either without evidence they corroborate.
 
+# Search, not a publisher list. This is the only channel that reaches past the
+# feeds above, and it earns its place: the Livemint story on Balaji Telefilms
+# going YouTube-first with ad revenue share while retaining IP -- a windowing
+# shift no creator trade covered -- came from here, not from any feed.
+#
+# Widened along the axes the feed list measurably under-covers. Each query is
+# one request per run, so seven is well inside any plan's limit, and the
+# headline gate does the filtering: a result only survives if its own title
+# says it is creator business, which is what keeps a broad search from
+# becoming a broad pool.
+#
+# Unverifiable from a development machine -- the key lives only in Actions --
+# so these are validated by a dispatched preview, not locally. The free tier
+# also delays articles about 24 hours, which is consistent with Livemint
+# arriving labelled as catch-up.
 NEWS_QUERIES = (
     "creator economy OR creator monetization OR influencer marketing",
     "YouTube creator deal OR TikTok creator monetization OR creator brand partnership",
+    # Money in and out: the events a creator trade often reports a day late.
+    "creator startup funding OR creator platform acquisition OR creator economy raise",
+    # Representation. Her rule 7 calls agency moves creator business.
+    "creator talent agency signing OR creator management acquisition OR MCN acquisition",
+    # Platform economics, which is the mechanism behind most of the news.
+    "YouTube monetization change OR TikTok creator fund OR Twitch payout OR Patreon pricing",
+    # Rule 7 explicitly: creator-led leagues, golf, fitness and event IP were
+    # being filed as sport and dropped. Good Good Golf is the recorded miss.
+    "creator led league OR athlete creator brand OR creator golf OR fitness creator business",
+    # The businesses she is closest to running herself.
+    "newsletter business acquisition OR podcast network deal OR Substack publisher",
 )
 
 
