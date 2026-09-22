@@ -65,6 +65,21 @@ STRONG_TERMS = (
 _RSS_TRUNCATION = re.compile(r"\s*\[(?:\u2026|\.\.\.)\]\s*$")
 _TAG = re.compile(r"<[^>]+>")
 
+# Publisher boilerplate glued to the end of a description. WordPress adds "The
+# post X appeared first on Y", and it survived tag-stripping to reach the
+# rendered brief as "... appeared first on A Media Operator ." It is not part
+# of the article: it wastes the reader's line, and it is also fed to the
+# analyst, where it is nothing but tokens and a chance to be misread.
+_FEED_FOOTER = re.compile(
+    r"\s*(?:The post\b.*?appeared first on\b.*"
+    r"|This (?:post|article)\b.*?(?:appeared|first published)\b.*"
+    r"|Continue reading\b.*?\bat\b.*"
+    r"|(?:Read|View) (?:more|the full (?:story|article))\b.*"
+    r"|Related:\s.*"
+    r"|The article\b.*?was (?:originally )?published\b.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def clean_feed_text(value: str, limit: int = 600) -> str:
     """Turn a raw feed description into plain readable prose.
@@ -79,7 +94,9 @@ def clean_feed_text(value: str, limit: int = 600) -> str:
     # Unescaping can expose a second layer, and some feeds double-encode.
     if "&" in text:
         text = html.unescape(text)
-    text = _RSS_TRUNCATION.sub("", re.sub(r"\s+", " ", text).strip())
+    text = re.sub(r"\s+", " ", text).strip()
+    text = _FEED_FOOTER.sub("", text)
+    text = _RSS_TRUNCATION.sub("", text).strip()
     return text[:limit].strip()
 
 

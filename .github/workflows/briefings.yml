@@ -57,7 +57,12 @@ jobs:
           LOZ_OPS_EMAILS: ${{ secrets.LOZ_OPS_EMAILS }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-          LOZ_ENABLE_PAID_SOURCES: ${{ vars.LOZ_ENABLE_PAID_SOURCES }}
+          # The X scraper supplies the commentary layer -- what is being said
+          # around the stories, in aggregate, never as entries. Roughly $0.21
+          # a month at one run a day, inside the existing daily and monthly
+          # caps. Set the variable to false to switch it off.
+          LOZ_ENABLE_PAID_SOURCES: ${{ vars.LOZ_ENABLE_PAID_SOURCES || 'true' }}
+          LOZ_PAID_MIN_FREE: ${{ vars.LOZ_PAID_MIN_FREE }}
           LOZ_APIFY_DAILY_USD_CAP: ${{ vars.LOZ_APIFY_DAILY_USD_CAP }}
           LOZ_APIFY_MONTHLY_USD_CAP: ${{ vars.LOZ_APIFY_MONTHLY_USD_CAP }}
           # The analyst. Live unless the variable explicitly says otherwise, so

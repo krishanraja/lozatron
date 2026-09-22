@@ -95,3 +95,34 @@ def test_a_feed_with_leading_whitespace_parses():
     except ET.ParseError:
         pass
     assert ET.fromstring(raw.lstrip()) is not None
+
+
+# --- publisher boilerplate in the body ---
+
+def test_wordpress_footers_are_stripped():
+    """"The post X appeared first on Y" reached the rendered brief."""
+    from lozatron.core import clean_feed_text
+    got = clean_feed_text(
+        "ISMG spent two decades building a profitable business. "
+        "The post This Profitable B2B Media Company Wants to Grow 4X. "
+        "Here's How. appeared first on A Media Operator .", 400)
+    assert got == "ISMG spent two decades building a profitable business."
+
+
+def test_other_common_footers_are_stripped():
+    from lozatron.core import clean_feed_text
+    for body, want in [
+        ("Creators launched an alliance. Continue reading this story at Variety",
+         "Creators launched an alliance."),
+        ("YouTube changed payouts. Read the full story on our site",
+         "YouTube changed payouts."),
+        ("TikTok lost the ruling. The article was originally published by Reuters",
+         "TikTok lost the ruling."),
+    ]:
+        assert clean_feed_text(body, 400) == want
+
+
+def test_a_sentence_that_merely_contains_the_word_post_survives():
+    from lozatron.core import clean_feed_text
+    body = "A real sentence that mentions the post office and should survive."
+    assert clean_feed_text(body, 400) == body

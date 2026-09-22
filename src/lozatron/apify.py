@@ -340,10 +340,19 @@ def _as_story(profile: str, row: dict[str, Any]) -> Story | None:
                  published_at=published, summary=summary[:1000], tier=tier)
 
 
-def collect_paid(spend_path: Path, now: dt.datetime | None = None) -> tuple[list[Story], list[str], bool]:
+def collect_paid(spend_path: Path, now: dt.datetime | None = None,
+                 profiles: tuple[str, ...] | None = None) -> tuple[list[Story], list[str], bool]:
+    """Run the paid profiles named, or all of them.
+
+    `profiles` exists because the profiles no longer serve one purpose. The
+    social ones supply commentary that annotates the news, so they are useful
+    precisely on the days the news is good; the story ones substitute for a
+    thin free pool. One "should we spend" answer cannot cover both.
+    """
     token = os.environ.get("APIFY_TOKEN", "").strip()
     if not token:
         return [], [], False
+    wanted = tuple(profiles) if profiles is not None else tuple(PROFILES)
     current = now or utcnow()
     cap = env_float("LOZ_APIFY_DAILY_USD_CAP", DEFAULT_DAILY_CAP_USD)
     monthly_cap = env_float("LOZ_APIFY_MONTHLY_USD_CAP", DEFAULT_MONTHLY_CAP_USD)
@@ -351,7 +360,9 @@ def collect_paid(spend_path: Path, now: dt.datetime | None = None) -> tuple[list
     stories: list[Story] = []
     errors: list[str] = []
     changed = False
-    for profile in PROFILES:
+    for profile in wanted:
+        if profile not in PROFILES:
+            continue
         if not state.permits(profile, cap, monthly_cap):
             continue
         row_id = state.record(profile)

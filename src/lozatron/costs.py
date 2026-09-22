@@ -21,6 +21,7 @@ from typing import Any
 
 from .analyst import LlmLedger
 from .apify import PROFILES, SpendState
+from .yields import YieldLedger
 
 INK = "#14171a"
 PAPER = "#faf8f5"
@@ -31,7 +32,8 @@ MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace"
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
 
 
-def gather(spend_path: Path, now: dt.datetime, days: int = 7) -> dict[str, Any]:
+def gather(spend_path: Path, now: dt.datetime, days: int = 7,
+           yield_path: Path | None = None) -> dict[str, Any]:
     end = now.date()
     start = end - dt.timedelta(days=days - 1)
     state = SpendState(spend_path, end.isoformat()).load()
@@ -61,7 +63,19 @@ def gather(spend_path: Path, now: dt.datetime, days: int = 7) -> dict[str, Any]:
     llm = LlmLedger(spend_path.parent / "llm_spend.json", end.isoformat()).load().tokens_between(
         start.isoformat(), end.isoformat()
     )
+    # Which feeds earned their place. Cheap to carry and the only thing that
+    # turns source curation from a thing somebody measured once into a thing
+    # the system reports on itself.
+    sources: dict[str, Any] = {}
+    if yield_path is not None:
+        ledger = YieldLedger(yield_path).load()
+        sources = {
+            "rows": ledger.window(now, days),
+            "freeloaders": ledger.freeloaders(now, days),
+        }
+
     return {
+        "sources": sources,
         "llm": llm,
         "start": start.isoformat(),
         "end": end.isoformat(),
@@ -155,6 +169,50 @@ def render(report: dict[str, Any], *, caps: dict[str, float]) -> tuple[str, str,
             f'</tbody></table>'
         )
 
+    sources = report.get("sources") or {}
+    rows_by_source = sources.get("rows") or {}
+    source_html = ""
+    if rows_by_source:
+        ranked = sorted(rows_by_source.items(),
+                        key=lambda kv: (-kv[1]["delivered"], -kv[1]["eligible"], kv[0]))
+        lines += ["Source yield this week (items / cleared the gate / delivered)", ""]
+        for name, counts in ranked:
+            lines.append(f"  {name[:26]:26} {counts['items']:5} {counts['eligible']:5} {counts['delivered']:5}")
+        lines.append("")
+        if sources.get("freeloaders"):
+            lines += ["Fetched all week and delivered nothing:",
+                      "  " + ", ".join(sources["freeloaders"]),
+                      "  Worth a look before the list grows again.", ""]
+        source_rows = "".join(
+            f'<tr><td style="padding:5px 0;font-family:{MONO};font-size:12px;color:{INK};">'
+            f'{html.escape(name)}</td>'
+            f'<td style="padding:5px 0;font-family:{MONO};font-size:12px;color:{MUTED};text-align:right;">'
+            f'{counts["items"]}</td>'
+            f'<td style="padding:5px 0;font-family:{MONO};font-size:12px;color:{MUTED};text-align:right;">'
+            f'{counts["eligible"]}</td>'
+            f'<td style="padding:5px 0;font-family:{MONO};font-size:12px;color:{INK};text-align:right;">'
+            f'{counts["delivered"]}</td></tr>'
+            for name, counts in ranked
+        )
+        freeloader_html = ""
+        if sources.get("freeloaders"):
+            freeloader_html = (
+                f'<p style="margin:10px 0 0;font-family:{MONO};font-size:11px;'
+                f'line-height:1.6;color:{MUTED};">Fetched all week, delivered nothing: '
+                f'{html.escape(", ".join(sources["freeloaders"]))}</p>'
+            )
+        source_html = (
+            f'<p style="margin:0 0 6px;font-family:{MONO};font-size:12px;letter-spacing:.06em;'
+            f'text-transform:uppercase;color:{MUTED};">Source yield</p>'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'style="border-top:1px solid {RULE};border-bottom:1px solid {RULE};margin:0 0 6px;">'
+            f'<tbody>{source_rows}</tbody></table>'
+            f'<p style="margin:0;font-family:{MONO};font-size:11px;color:{MUTED};">'
+            f'items fetched &middot; cleared the gate &middot; delivered</p>'
+            f'{freeloader_html}'
+            f'<div style="height:22px;"></div>'
+        )
+
     caveat = ""
     if report["estimated_only"]:
         caveat = (
@@ -183,6 +241,7 @@ def render(report: dict[str, Any], *, caps: dict[str, float]) -> tuple[str, str,
         f'style="border-top:1px solid {RULE};border-bottom:1px solid {RULE};margin:0 0 20px;">'
         f'<tbody>{rows_html}</tbody></table>'
         f'{llm_html}'
+        f'{source_html}'
         f'<p style="margin:0;font-family:{MONO};font-size:12px;line-height:1.7;color:{MUTED};">'
         f'Month to date ${report["month_to_date"]:.2f} of ${caps["monthly"]:.2f}<br>'
         f'Daily cap ${caps["daily"]:.2f} &middot; hard per-run ceiling enforced by Apify<br>'

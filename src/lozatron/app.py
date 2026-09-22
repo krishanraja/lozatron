@@ -6,8 +6,10 @@ import json
 import os
 from pathlib import Path
 
-from . import analyst, costs, gmail, render as render_mod, schedule, store
-from .apify import DEFAULT_DAILY_CAP_USD, DEFAULT_MONTHLY_CAP_USD, collect_paid
+from . import analyst, costs, gmail, render as render_mod, schedule, store, yields
+from .apify import (
+    DEFAULT_DAILY_CAP_USD, DEFAULT_MONTHLY_CAP_USD, PROFILE_TIERS, collect_paid,
+)
 from .brief import compose
 from .cluster import attach_commentary, find_patterns, select_analysis, select_clusters
 from .core import (
@@ -32,8 +34,8 @@ def paid_sources_due(
     free_candidates: int,
     *,
     dry_run: bool,
-) -> tuple[bool, str]:
-    """Decide whether to spend money on this run. Returns (run_it, reason).
+) -> tuple[tuple[str, ...], str]:
+    """Which paid profiles to run. Returns (profiles, reason).
 
     Paid scraping used to fire on every non-dry run, with no mode check, which
     meant all sixteen breaking-news checks a day could spend the budget. Those
@@ -45,18 +47,31 @@ def paid_sources_due(
     free sources came up short. Everything else is free.
     """
     if not env_flag("LOZ_ENABLE_PAID_SOURCES"):
-        return False, "disabled"
+        return (), "disabled"
     if dry_run:
-        return False, "dry_run"
+        return (), "dry_run"
     if mode != "briefing":
-        return False, "breaking_mode"
+        return (), "breaking_mode"
     morning = str(min(schedule.parse_slots(env_text("LOZ_BRIEF_SLOTS_ET"))))
     if slot and not slot.endswith(f"T{int(morning):02d}"):
-        return False, "not_morning_slot"
-    threshold = env_int("LOZ_PAID_MIN_FREE", 6)
-    if free_candidates >= threshold:
-        return False, "free_sources_sufficient"
-    return True, "due"
+        return (), "not_morning_slot"
+
+    # The social profiles are not a substitute for a thin news pool, so the
+    # thinness test does not apply to them. Their job is to say what is being
+    # discussed around the stories we already have, which is most useful on
+    # the days there are stories -- exactly the days the old gate skipped
+    # them. At $0.007 a run the X scraper is roughly 21 cents a month.
+    due = tuple(name for name, tier in PROFILE_TIERS.items() if tier == "social")
+
+    # Story-supplying profiles keep the original bargain: pay only when the
+    # free feeds came up short. Widening the free list raises this count, so
+    # the threshold moved with it -- otherwise every feed added quietly
+    # retires the paid layer.
+    threshold = env_int("LOZ_PAID_MIN_FREE", 10)
+    if free_candidates < threshold:
+        due += tuple(name for name, tier in PROFILE_TIERS.items() if tier != "social")
+        return due, "due"
+    return due, "social_only"
 
 
 def run(
@@ -112,9 +127,23 @@ def run(
     paid_changed = False
     run_paid, paid_reason = paid_sources_due(mode, slot, free_candidates, dry_run=dry_run)
     if run_paid:
-        paid_stories, paid_errors, paid_changed = collect_paid(spend_path, now)
+        paid_stories, paid_errors, paid_changed = collect_paid(spend_path, now, run_paid)
         stories.extend(paid_stories)
         source_errors.extend(paid_errors)
+
+    # Per-source yield. Until this existed, the only way to answer "is this
+    # feed earning its place" was for a human to re-run the measurements by
+    # hand, which is how Kajabi sat in the list contributing nothing and how
+    # a leading-newline ParseError hid a live feed. Counts only -- no titles,
+    # no URLs -- so it is safe in a public repo.
+    source_yield: dict[str, dict[str, int]] = {}
+    for item in stories:
+        row = source_yield.setdefault(item.source, {"items": 0, "fresh": 0, "eligible": 0, "delivered": 0})
+        row["items"] += 1
+        if passes_hard_gates(item, now, window):
+            row["fresh"] += 1
+        if eligible(item, now, window):
+            row["eligible"] += 1
 
     # Counted for the "screened and set aside" line, which answers the standing
     # complaint that rejections were never explained.
@@ -164,6 +193,11 @@ def run(
     # Social reaches the brief only in aggregate. It attaches to a story as a
     # count, or becomes one line when several distinct accounts converge on a
     # theme with nothing reported behind it. Never as an entry, never quoted.
+    for cluster in clusters:
+        row = source_yield.get(cluster.leader.source)
+        if row is not None:
+            row["delivered"] += 1
+
     social = [item for item in stories if item.tier == "social"]
     commentary = attach_commentary(clusters, social)
     patterns = [
@@ -229,6 +263,13 @@ def run(
             state.record_slot(slot, now)
         state.prune(now)
         state.save()
+        # Recorded only on a real send, alongside the delivery ledger, so the
+        # yield figures describe editions Lauren actually received rather than
+        # every dry run and preview.
+        ledger = yields.YieldLedger(state_path.parent / "source_yield.json").load()
+        ledger.record(source_yield, now)
+        ledger.prune(now)
+        ledger.save()
         if document is not None:
             archive_reason = store.record(
                 document, edition_id=edition, sent=True,
@@ -249,6 +290,7 @@ def run(
         "sources_seen": len(stories),
         "stories_selected": len(selected),
         "mechanics_selected": len(mechanics),
+        "source_yield": source_yield,
         "commentary_attached": sum(len(v) for v in commentary.values()),
         "patterns": patterns,
         "sent": sent,
@@ -259,6 +301,7 @@ def run(
         "source_errors": source_errors,
         "paid_state_changed": paid_changed,
         "paid_sources": paid_reason,
+        "paid_profiles": list(run_paid),
         "free_candidates": free_candidates,
         "selected": [item.to_dict() for item in selected],
     }
@@ -286,6 +329,20 @@ def compare(mode: str, state_path: Path) -> dict[str, object]:
         analysis_pool, analysis_errors = analysis_stories(now)
         source_errors.extend(analysis_errors)
         mechanics = select_analysis(analysis_pool, state.contains, now=now)
+
+    # Per-source yield. Until this existed, the only way to answer "is this
+    # feed earning its place" was for a human to re-run the measurements by
+    # hand, which is how Kajabi sat in the list contributing nothing and how
+    # a leading-newline ParseError hid a live feed. Counts only -- no titles,
+    # no URLs -- so it is safe in a public repo.
+    source_yield: dict[str, dict[str, int]] = {}
+    for item in stories:
+        row = source_yield.setdefault(item.source, {"items": 0, "fresh": 0, "eligible": 0, "delivered": 0})
+        row["items"] += 1
+        if passes_hard_gates(item, now, window):
+            row["fresh"] += 1
+        if eligible(item, now, window):
+            row["eligible"] += 1
 
     # Counted for the "screened and set aside" line, which answers the standing
     # complaint that rejections were never explained.
@@ -423,7 +480,8 @@ def main() -> int:
         return 0
 
     if args.cost_report:
-        report = costs.gather(args.spend_state, utcnow())
+        report = costs.gather(args.spend_state, utcnow(),
+                              yield_path=args.state.parent / "source_yield.json")
         caps = {
             "daily": env_float("LOZ_APIFY_DAILY_USD_CAP", DEFAULT_DAILY_CAP_USD),
             "monthly": env_float("LOZ_APIFY_MONTHLY_USD_CAP", DEFAULT_MONTHLY_CAP_USD),

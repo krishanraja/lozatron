@@ -11,7 +11,7 @@ import json
 import pytest
 
 from lozatron import costs
-from lozatron.apify import PROFILES, SpendState
+from lozatron.apify import PROFILE_TIERS, PROFILES, SpendState
 from lozatron.app import paid_sources_due
 
 UTC = dt.timezone.utc
@@ -29,36 +29,71 @@ def paid_enabled(monkeypatch):
 
 def test_breaking_runs_never_spend():
     """Sixteen checks a day, overnight, consuming the budget before the brief."""
-    assert paid_sources_due("breaking", "2026-09-21T09", 0, dry_run=False) == (False, "breaking_mode")
+    assert paid_sources_due("breaking", "2026-09-21T09", 0, dry_run=False) == ((), "breaking_mode")
 
 
 def test_only_the_morning_brief_may_spend():
-    assert paid_sources_due("briefing", "2026-09-21T09", 0, dry_run=False)[0] is True
+    assert paid_sources_due("briefing", "2026-09-21T09", 0, dry_run=False)[0]
     for slot in ("2026-09-21T14", "2026-09-21T18"):
-        assert paid_sources_due("briefing", slot, 0, dry_run=False) == (False, "not_morning_slot")
+        assert paid_sources_due("briefing", slot, 0, dry_run=False) == ((), "not_morning_slot")
 
 
-def test_healthy_free_pool_skips_paid_sources():
-    assert paid_sources_due("briefing", "2026-09-21T09", 9, dry_run=False) == (
-        False, "free_sources_sufficient")
+def test_a_healthy_free_pool_still_buys_commentary():
+    """Social is not a substitute for news.
+
+    Its job is to say what is being discussed around the stories we already
+    have, which is most useful on the days there ARE stories -- exactly the
+    days the old thinness gate skipped it.
+    """
+    due, reason = paid_sources_due("briefing", "2026-09-21T09", 30, dry_run=False)
+    assert reason == "social_only"
+    assert set(due) == {name for name, tier in PROFILE_TIERS.items() if tier == "social"}
 
 
-def test_thin_free_pool_permits_paid_sources():
-    assert paid_sources_due("briefing", "2026-09-21T09", 2, dry_run=False) == (True, "due")
+def test_a_healthy_free_pool_still_skips_the_story_scrapers():
+    due, _ = paid_sources_due("briefing", "2026-09-21T09", 30, dry_run=False)
+    assert not [name for name in due if PROFILE_TIERS[name] != "social"]
+
+
+def test_thin_free_pool_permits_every_profile():
+    due, reason = paid_sources_due("briefing", "2026-09-21T09", 2, dry_run=False)
+    assert reason == "due"
+    assert set(due) == set(PROFILE_TIERS)
 
 
 def test_dry_run_never_spends():
-    assert paid_sources_due("briefing", "2026-09-21T09", 0, dry_run=True) == (False, "dry_run")
+    assert paid_sources_due("briefing", "2026-09-21T09", 0, dry_run=True) == ((), "dry_run")
 
 
 def test_disabled_flag_wins(monkeypatch):
     monkeypatch.setenv("LOZ_ENABLE_PAID_SOURCES", "false")
-    assert paid_sources_due("briefing", "2026-09-21T09", 0, dry_run=False) == (False, "disabled")
+    assert paid_sources_due("briefing", "2026-09-21T09", 0, dry_run=False) == ((), "disabled")
 
 
 def test_threshold_is_configurable(monkeypatch):
     monkeypatch.setenv("LOZ_PAID_MIN_FREE", "2")
-    assert paid_sources_due("briefing", "2026-09-21T09", 3, dry_run=False)[0] is False
+    due, reason = paid_sources_due("briefing", "2026-09-21T09", 3, dry_run=False)
+    assert reason == "social_only"
+
+
+def test_collect_paid_honours_the_profile_filter(tmp_path, monkeypatch):
+    """A filtered call must not be able to start a run it was not asked for."""
+    monkeypatch.setenv("APIFY_TOKEN", "t")
+    started = []
+    import lozatron.apify as apify_mod
+    monkeypatch.setattr(apify_mod, "_run_profile",
+                        lambda profile, token, now: started.append(profile) or [])
+    apify_mod.collect_paid(tmp_path / "s.json", profiles=("x_creator",))
+    assert started == ["x_creator"]
+
+
+def test_an_unknown_profile_name_is_ignored_rather_than_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("APIFY_TOKEN", "t")
+    import lozatron.apify as apify_mod
+    monkeypatch.setattr(apify_mod, "_run_profile",
+                        lambda profile, token, now: (_ for _ in ()).throw(AssertionError(profile)))
+    stories, errors, changed = apify_mod.collect_paid(tmp_path / "s.json", profiles=("nope",))
+    assert (stories, errors, changed) == ([], [], False)
 
 
 # --- caps ---
