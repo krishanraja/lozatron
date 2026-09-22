@@ -398,13 +398,21 @@ class DeliveryState:
     and simply carry no slot history, so no migration is required.
     """
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
     SLOT_RETENTION_DAYS = 30
+
+    # The backstop. However badly a workflow, a variable or a gate is
+    # misconfigured, no more than this many briefs can leave in one UTC day.
+    # One slot a day means the expected count is 1; 2 leaves room for a manual
+    # re-send without needing a code change.
+    MAX_SENDS_PER_DAY = 2
+    SEND_RETENTION_DAYS = 14
 
     def __init__(self, path: Path):
         self.path = path
         self.rows: dict[str, str] = {}
         self.slots: dict[str, str] = {}
+        self.sends: dict[str, int] = {}
         self.last_success_date = ""
 
     def load(self) -> "DeliveryState":
@@ -412,10 +420,14 @@ class DeliveryState:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             self.rows = dict(data.get("delivered", {}))
             self.slots = dict(data.get("slots", {}))
+            self.sends = {
+                str(key): int(value) for key, value in dict(data.get("sends", {})).items()
+            }
             self.last_success_date = str(data.get("last_success_date", ""))
         except (FileNotFoundError, json.JSONDecodeError, TypeError, ValueError):
             self.rows = {}
             self.slots = {}
+            self.sends = {}
             self.last_success_date = ""
         return self
 
@@ -441,6 +453,22 @@ class DeliveryState:
     def record_slot(self, slot: str, when: dt.datetime) -> None:
         self.slots[slot] = when.astimezone(UTC).isoformat()
 
+    def sends_today(self, when: dt.datetime) -> int:
+        return int(self.sends.get(when.astimezone(UTC).date().isoformat(), 0))
+
+    def permits_send(self, when: dt.datetime) -> bool:
+        """Fail-closed daily email ceiling.
+
+        Deliberately consulted after selection and before Gmail, so it bounds
+        every path — briefing, breaking, or anything added later — rather than
+        any one gate.
+        """
+        return self.sends_today(when) < self.MAX_SENDS_PER_DAY
+
+    def record_send(self, when: dt.datetime) -> None:
+        day = when.astimezone(UTC).date().isoformat()
+        self.sends[day] = int(self.sends.get(day, 0)) + 1
+
     def hours_since_success(self, when: dt.datetime) -> float | None:
         """Age of the newest recorded slot, for the staleness watchdog.
 
@@ -463,6 +491,7 @@ class DeliveryState:
             self.rows[story.key] = stamp
             if dual:
                 self.rows[fingerprint_v1(story.title, story.url)] = stamp
+        self.record_send(moment)
 
     def prune(self, when: dt.datetime, days: int = 90) -> None:
         cutoff = when - dt.timedelta(days=days)
@@ -478,6 +507,8 @@ class DeliveryState:
             for key, value in self.slots.items()
             if (parsed := parse_datetime(value)) is None or parsed >= slot_cutoff
         }
+        send_cutoff = (when - dt.timedelta(days=self.SEND_RETENTION_DAYS)).date().isoformat()
+        self.sends = {key: value for key, value in self.sends.items() if key >= send_cutoff}
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -486,6 +517,7 @@ class DeliveryState:
             "last_success_date": self.last_success_date,
             "delivered": dict(sorted(self.rows.items())),
             "slots": dict(sorted(self.slots.items())),
+            "sends": dict(sorted(self.sends.items())),
         }
         self.path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

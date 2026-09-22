@@ -38,9 +38,44 @@ def refresh_access_token() -> str:
     return token
 
 
-def recipients() -> list[str]:
+# --- Reader delivery hard stop -------------------------------------------
+#
+# Lauren receives nothing while this is False. It is a code constant, not an
+# environment variable, deliberately: the failure that caused the flood was a
+# safety rule that lived in a workflow variable and was never wired into the
+# workflow that needed it. A constant cannot be absent, cannot be misspelled in
+# one of two YAML files, and shows up in the diff when it changes.
+#
+# Flipping it to True is a one-line, reviewable change. Nothing else re-enables
+# reader delivery.
+READER_DELIVERY_ENABLED = False
+
+
+def reader_delivery_enabled() -> bool:
+    return READER_DELIVERY_ENABLED
+
+
+def configured_reader_recipients() -> list[str]:
+    """The reader list as configured, regardless of whether delivery is on."""
     values = [item.strip() for item in _required("LOZ_RECIPIENT_EMAILS").split(",")]
     return [item for item in values if item]
+
+
+def recipients() -> list[str]:
+    """Who the brief actually goes to.
+
+    While the hard stop is engaged this is the ops address and only the ops
+    address, whatever `LOZ_RECIPIENT_EMAILS` says.
+    """
+    if not READER_DELIVERY_ENABLED:
+        ops = ops_recipients()
+        if not ops:
+            raise RuntimeError(
+                "Reader delivery is disabled and no ops recipients are set; "
+                "set LOZ_OPS_EMAILS so the brief has somewhere safe to go."
+            )
+        return ops
+    return configured_reader_recipients()
 
 
 def ops_recipients() -> list[str]:
@@ -54,6 +89,13 @@ def ops_recipients() -> list[str]:
 
 
 def cc_recipients() -> list[str]:
+    """Copy list for the brief.
+
+    Empty while the hard stop is engaged: the brief is already going to ops,
+    and CC would otherwise address the same people twice.
+    """
+    if not READER_DELIVERY_ENABLED:
+        return []
     values = [item.strip() for item in os.environ.get("LOZ_CC_EMAILS", "").split(",")]
     return [item for item in values if item]
 

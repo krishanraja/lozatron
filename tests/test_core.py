@@ -59,7 +59,7 @@ def test_state_round_trip(tmp_path):
     state.mark([row], NOW)
     state.save()
     assert row.key in DeliveryState(path).load().keys()
-    assert json.loads(path.read_text())["version"] == 2
+    assert json.loads(path.read_text())["version"] == 3
     assert json.loads(path.read_text())["last_success_date"] == "2026-09-20"
 
 
@@ -71,6 +71,8 @@ def test_paid_source_cap_is_fail_closed(tmp_path):
 
 
 def test_cc_recipients_are_optional_and_comma_separated(monkeypatch):
+    from lozatron import gmail
+    monkeypatch.setattr(gmail, "READER_DELIVERY_ENABLED", True)
     monkeypatch.delenv("LOZ_CC_EMAILS", raising=False)
     assert cc_recipients() == []
     monkeypatch.setenv("LOZ_CC_EMAILS", "one@example.com, two@example.com")

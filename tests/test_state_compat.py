@@ -52,7 +52,7 @@ def test_upgrade_preserves_prior_fingerprints(tmp_path):
     again = DeliveryState(path).load()
     assert "b" * 64 in again.keys()
     assert again.delivered_slots() == {"2026-09-21T09"}
-    assert json.loads(path.read_text())["version"] == 2
+    assert json.loads(path.read_text())["version"] == 3
 
 
 def test_prune_keeps_recent_slots_and_drops_stale_ones(tmp_path):

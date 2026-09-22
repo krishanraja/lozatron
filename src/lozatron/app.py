@@ -183,6 +183,16 @@ def run(
     # of signal. Silence is the more useful message: a missing brief then
     # means something is wrong rather than nothing happened.
     should_send = bool(selected)
+    # Fail-closed daily ceiling. It bounds every send path at once, so no
+    # future gate, flag or workflow can produce a flood whatever else is
+    # misconfigured.
+    ceiling_hit = should_send and not state.permits_send(now)
+    if ceiling_hit:
+        should_send = False
+        print(
+            "::warning title=Daily email ceiling reached::"
+            f"{state.sends_today(now)} brief(s) already sent today; suppressing."
+        )
     if should_send and not dry_run:
         message_id = gmail.send(subject, text_body, html_body, edition_id=edition)
         sent = True
@@ -211,6 +221,9 @@ def run(
         "sources_seen": len(stories),
         "stories_selected": len(selected),
         "sent": sent,
+        "ceiling_hit": ceiling_hit,
+        "sends_today": state.sends_today(now),
+        "reader_delivery": gmail.reader_delivery_enabled(),
         "message_id_present": bool(message_id),
         "source_errors": source_errors,
         "paid_state_changed": paid_changed,
