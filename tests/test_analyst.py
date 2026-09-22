@@ -247,3 +247,23 @@ def test_model_not_found_is_not_charged(tmp_path, monkeypatch):
     result, reason = analyse([cluster()], [], ledger=LlmLedger(path).load())
     assert result is None and reason == "model_not_found"
     assert LlmLedger(path).load().spent() == 0.0
+
+
+def test_a_bounded_field_does_not_cut_mid_word():
+    """A live edition ended "...incubated and monet"."""
+    from lozatron.analyst import MAX_FIELD, _clean
+    got = _clean("word " * 400, MAX_FIELD)
+    assert len(got) <= MAX_FIELD
+    assert got.endswith("…")
+    assert not got.endswith("wor…")
+
+
+def test_truncation_prefers_a_sentence_end():
+    from lozatron.analyst import _clean
+    got = _clean("One sentence here. Two sentence here. " + "x" * 80, 60)
+    assert got == "One sentence here. Two sentence here."
+
+
+def test_a_short_field_is_untouched():
+    from lozatron.analyst import _clean
+    assert _clean("Short and complete.", 400) == "Short and complete."

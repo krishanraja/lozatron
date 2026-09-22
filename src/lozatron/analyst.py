@@ -230,8 +230,25 @@ def models() -> tuple[str, ...]:
 
 
 def _clean(value: object, limit: int) -> str:
+    """Normalise whitespace and bound the length at a readable break.
+
+    A hard slice cut mid-word: a live edition ended "...resetting competitive
+    expectations for how new shows are incubated and monet". The cap has to
+    stay -- an unbounded field is an unbounded email -- so it now falls back
+    to the last sentence end, or failing that the last space, and marks the
+    cut so a truncated thought does not read as a finished one.
+    """
     text = re.sub(r"\s+", " ", str(value or "")).strip()
-    return text[:limit]
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    # Prefer a sentence end in the last quarter, so we cut at a real stop
+    # rather than amputating the final clause.
+    stop = max(head.rfind(". "), head.rfind("? "), head.rfind("! "))
+    if stop >= limit * 3 // 4:
+        return head[:stop + 1]
+    space = head.rfind(" ")
+    return (head[:space] if space > 0 else head).rstrip(",;: ") + "\u2026"
 
 
 def _payload(clusters: Iterable[Any], recent: list[dict]) -> str:

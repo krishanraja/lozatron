@@ -415,10 +415,10 @@ def preview(mode: str, state_path: Path) -> dict[str, object]:
     clusters = select_clusters(stories, state.contains, now=now, window_hours=window, limit=limit)
 
     analysis, reason = (None, "off")
-    if env_text("LOZ_ANALYST", "off").lower() != "off" and clusters:
+    if env_text("LOZ_ANALYST", "off").lower() != "off" and (clusters or mechanics):
         ledger = analyst.LlmLedger(state_path.parent / "llm_spend.json").load()
         analysis, reason = analyst.analyse(
-            clusters, [], ledger=ledger,
+            clusters + mechanics, [], ledger=ledger,
             cap_usd=env_float("LOZ_LLM_DAILY_USD_CAP", 2.00),
             monthly_cap_usd=env_float("LOZ_LLM_MONTHLY_USD_CAP", 40.00),
         )
@@ -434,6 +434,7 @@ def preview(mode: str, state_path: Path) -> dict[str, object]:
         clusters, analysis, mode=mode, slot=None, now=now,
         degraded="" if reason in ("ok", "partial_analysis", "off") else reason,
         filtered=filtered,
+        mechanics=mechanics,
     )
     subject, text_body, html_body = render_mod.render(document)
     subject = f"[PREVIEW] {subject}"
@@ -448,6 +449,7 @@ def preview(mode: str, state_path: Path) -> dict[str, object]:
         "preview": True,
         "sources_seen": len(stories),
         "stories": len(clusters),
+        "mechanics": len(mechanics),
         "analysis": reason,
         "analyst_model": analysis.model if analysis else "",
         "sent": sent,
