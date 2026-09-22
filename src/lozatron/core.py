@@ -22,12 +22,27 @@ CREATOR_TERMS = (
     "colin and samir", "dude perfect", "creator economy",
 )
 
+# NOTE ON THE `*` SUFFIX. These were once matched as plain substrings and the
+# word-boundary conversion silently narrowed every bare stem: "launch" stopped
+# matching "launches" and "launching", "raised" stopped matching "raises",
+# "sold" stopped matching "sells". Those are the commonest verbs in a
+# creator-business headline, so the gate was rejecting real stories on an
+# inflection. Measured live, "Kick creator N3on is launching..." failed the
+# business half of the gate outright.
+#
+# The stems that take `*` are the ones with no short false friend. "sign*" is
+# deliberately NOT used -- it would match "signal", "signage" and
+# "significant" -- so its inflections are spelled out instead.
 BUSINESS_TERMS = (
-    "deal", "partner*", "partnership", "acqui*", "fund*", "launch", "brand",
-    "sponsor*", "collab", "invest*", "contract", "exclusive",
-    "revenue", "monetiz*", "monetis*", "marketplace", "platform", "payout", "affiliate",
-    "commerce", "licensing", "agency", "talent", "ceo", "cmo", "hired",
-    "sold", "raised", "advertising", "subscription", "storefront",
+    "deal", "deals", "partner*", "partnership", "acqui*", "fund*", "launch*",
+    "brand", "sponsor*", "collab*", "invest*", "contract*", "exclusive",
+    "revenue", "monetiz*", "monetis*", "marketplace", "platform", "payout*",
+    "affiliate", "commerce", "licens*", "licenc*", "agency", "agencies",
+    "talent", "ceo", "cmo", "hire*", "hired", "hiring",
+    "sell", "sells", "selling", "sold", "buy", "buys", "bought",
+    "raise*", "appoint*", "advertis*", "subscription", "storefront",
+    "signs", "signed", "signing", "ink", "inks", "inked", "merger", "merge*",
+    "valuation", "ipo", "stake", "equity", "rollout", "rolls out",
 )
 
 SOFT_PATTERNS = (
@@ -35,10 +50,14 @@ SOFT_PATTERNS = (
     "what is", "explainer", "checklist", "playbook",
 )
 
+# A concrete, dated business event rather than commentary about one. Same
+# inflection rule as BUSINESS_TERMS above.
 STRONG_TERMS = (
-    "acquisition", "acquires", "funding", "raised", "launch", "partnership",
-    "payout", "monetization", "contract", "licensing", "signed", "appoints",
-    "hires", "sold", "storefront",
+    "acquisition", "acquir*", "funding", "raise*", "launch*", "partnership",
+    "payout*", "monetiz*", "monetis*", "contract", "licens*", "licenc*",
+    "signs", "signed", "signing", "appoint*", "hire*", "hired", "hiring",
+    "sell", "sells", "sold", "buys", "bought", "merger", "ipo",
+    "storefront", "invest*", "valuation", "stake", "inks", "inked",
 )
 
 
@@ -365,14 +384,50 @@ def eligible(story: Story, now: dt.datetime, window_hours: int) -> bool:
     return True
 
 
-def rank(story: Story, now: dt.datetime) -> int:
-    text = f"{story.title} {story.summary}".lower()
+# Lauren's freshness rule: 0-8h priority, 8-24h secondary, 24-48h fallback and
+# labelled. Recency is a tiebreak and a label, never a veto.
+FRESHNESS_TIERS = ((8, "priority"), (24, "secondary"), (48, "fallback"))
+
+
+def freshness_tier(story: Story, now: dt.datetime) -> str:
     age = max(0.0, (now - story.published_at).total_seconds() / 3600)
-    score = 12 if age <= 3 else 9 if age <= 8 else 5 if age <= 24 else 1
-    _, _, _, strong, _, _ = _matchers()
-    score += 2 * len(set(strong.findall(text)))
+    for limit, name in FRESHNESS_TIERS:
+        if age <= limit:
+            return name
+    return "stale"
+
+
+def relevance(story: Story) -> int:
+    """How much this story is creator business, independent of when it broke.
+
+    Split out from `rank` because the two were entangled and the interaction
+    quietly shortened the brief's window from 48 hours to eight. The old ladder
+    scored 12/9/5/1 by age and the floor was 8, so a 25-hour-old story needed
+    three separate strong business terms to clear a bar that a three-hour-old
+    story cleared with none. Lauren's rule asks for 24-48h items as a labelled
+    fallback, not for them to be filtered out by arithmetic nobody intended.
+
+    The floor now applies to this number. Recency orders and labels.
+    """
+    text = f"{story.title} {story.summary}".lower()
+    _, _, _, strong, _, core = _matchers()
+    score = 2 * len(set(strong.findall(text)))
     score += 1 if re.search(r"\b(creator|youtube|tiktok|influencer)", text, re.I) else 0
+    # A creator term in the headline, rather than buried in the summary, is the
+    # difference between a story about the creator economy and a story that
+    # mentions it in passing.
+    score += 2 if core.search(story.title) else 0
     return score
+
+
+def recency_bonus(story: Story, now: dt.datetime) -> int:
+    age = max(0.0, (now - story.published_at).total_seconds() / 3600)
+    return 12 if age <= 3 else 9 if age <= 8 else 5 if age <= 24 else 1
+
+
+def rank(story: Story, now: dt.datetime) -> int:
+    """Ordering score. Relevance decides what ships; this decides the order."""
+    return relevance(story) + recency_bonus(story, now)
 
 
 def select_stories(

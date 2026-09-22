@@ -11,6 +11,8 @@ import dataclasses
 import datetime as dt
 from typing import Any
 
+from .core import clean_feed_text
+
 # Below this, the model is telling us it is unsure. Shown as a flag, never as a
 # number: a self-rated confidence score invites trust in a figure that is not
 # calibrated. The honest signal is how many independent outlets ran the story.
@@ -25,6 +27,9 @@ class Entry:
     corroboration: int
     age_hours: int
     summary: str
+    # priority (0-8h) | secondary (8-24h) | fallback (24-48h). Lauren's rule
+    # asks for the oldest tier to be labelled rather than silently mixed in.
+    freshness: str = ""
     what_happened: str = ""
     why_it_matters: str = ""
     what_to_watch: str = ""
@@ -76,11 +81,17 @@ def compose(
     entries: list[Entry] = []
     for cluster in clusters:
         entry = Entry(
-            title=cluster.leader.title,
+            # Titles arrive from feeds carrying entities -- `Alex Cooper&#8217;s`
+            # renders literally once the escaper turns the `&` into `&amp;`.
+            # Cleaned here, at composition, so the HTML renderer, the plain-text
+            # twin and the decision index all get the same clean string rather
+            # than each needing to remember.
+            title=clean_feed_text(cluster.leader.title, 300),
             url=cluster.leader.url,
             outlets=cluster.outlets,
             corroboration=cluster.corroboration,
             age_hours=cluster.age_hours,
+            freshness=cluster.freshness,
             summary=cluster.leader.summary,
         )
         judged = analysis.per_cluster.get(cluster.key) if analysis else None

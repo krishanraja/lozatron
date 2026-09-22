@@ -143,7 +143,8 @@ def render_text(brief: Brief) -> str:
     for index, entry in enumerate(brief.entries, 1):
         lines.append(f"{index}. {entry.title}")
         corroboration = f" ({entry.corroboration} outlets)" if entry.corroboration > 3 else ""
-        lines.append(f"   {entry.outlet_line}{corroboration}, {_age(entry.age_hours)}")
+        catch_up = " [catch-up]" if entry.freshness == "fallback" else ""
+        lines.append(f"   {entry.outlet_line}{corroboration}, {_age(entry.age_hours)}{catch_up}")
         if entry.analysed:
             lines += [f"   What happened: {entry.what_happened}",
                       f"   Why it matters: {entry.why_it_matters}",
@@ -169,6 +170,13 @@ def _story(entry: Entry, index: int) -> str:
     if entry.corroboration > 3:
         meta += f" &middot; {entry.corroboration} outlets"
     meta += f" &middot; {_t(_age(entry.age_hours))}"
+    # Her rule asks for 24-48h items to be labelled rather than silently mixed
+    # in with the morning's news. Only the oldest tier is marked: labelling the
+    # other two would put a badge on every story and mean nothing.
+    if entry.freshness == "fallback":
+        meta += (
+            f' &middot; <span style="color:{MUTED};">catch-up</span>'
+        )
 
     body = []
     if entry.analysed:

@@ -103,7 +103,14 @@ def request(
 ) -> bytes:
     """Perform a request, retrying per the policy above. Raises HttpError."""
     sent = dict(headers or {})
-    sent.setdefault("User-Agent", "Lozatron/1.0")
+    # Several publishers 403 a bare token user agent from a datacenter IP.
+    # Creator Handbook is the measured case: 403 on "Lozatron/1.0", 200 on
+    # this. The identity and contact URL are still here, so this is not a
+    # disguise -- it is the form the blocklists expect.
+    sent.setdefault(
+        "User-Agent",
+        "Mozilla/5.0 (compatible; Lozatron/1.0; +https://github.com/krishanraja/lozatron)",
+    )
     last: BaseException | None = None
     status: int | None = None
 

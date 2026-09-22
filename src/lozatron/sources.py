@@ -32,7 +32,21 @@ FEEDS = (
     ("Social Media Today", "https://www.socialmediatoday.com/feeds/news/"),
     ("Influencer Marketing Hub", "https://influencermarketinghub.com/feed/"),
     ("Kajabi", "https://kajabi.com/blog/rss.xml"),
+    # Added 2026-09-22 after the free primary layer was removed, to replace the
+    # volume it was supplying with sources that actually clear the mandate
+    # gate. Both probed live first.
+    ("Creator Handbook", "https://creatorhandbook.net/feed/"),
+    ("Glossy", "https://www.glossy.co/feed/"),
 )
+
+# Probed and rejected, recorded so nobody re-probes them:
+#   The Publish Press   -- no public RSS; /feed, /rss and the beehiiv paths 404
+#   Colin and Samir     -- no public RSS
+#   Marketing Brew      -- no public RSS (the historical entry was always a 404)
+#   Creator Economy NYC -- no public RSS
+#   ICYMI (Lia Haberman)-- feed exists but carries one stale placeholder item
+#   Social Media Examiner, Modern Retail -- parse fine, produce nothing that
+#                          clears the mandate gate; pool noise only
 
 # Removed on evidence, 2026-09-22: YouTube channel RSS and subreddit RSS.
 #

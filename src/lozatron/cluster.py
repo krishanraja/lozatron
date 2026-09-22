@@ -23,7 +23,7 @@ import unicodedata
 
 from typing import Callable
 
-from .core import Story, eligible, normalize_url, rank
+from .core import Story, eligible, freshness_tier, normalize_url, rank, relevance
 
 # Words carrying no discriminating power in a headline.
 STOPWORDS = frozenset("""
@@ -87,6 +87,17 @@ MERGE_BY_ANCHOR = 28    # different words, same company and same amount
 # target pulled in a tail of weak matches -- a laptop launch, a naval
 # procurement list -- so a floor keeps the tail out. A quiet day now produces a
 # short brief rather than a padded one, and an empty briefing sends nothing.
+# The floor is now a RELEVANCE floor, not a rank floor. When it applied to
+# rank, recency was inside the number and a 25-hour-old story needed three
+# strong business terms to clear a bar a three-hour-old story cleared with
+# none -- which silently cut the declared 48-hour window down to eight and
+# starved the brief. 3 means, in practice, one strong business term plus a
+# creator term. Crucially it requires at least one STRONG term, so a story has
+# to report a business event rather than merely be about creators: at 3, "A
+# creator reflects on the year" cleared the bar on the creator signal alone.
+MIN_RELEVANCE = 4
+
+# Kept for the legacy `select_stories` diagnostic path only.
 MIN_SCORE = 8
 
 
@@ -190,6 +201,8 @@ class Cluster:
     # Integer hours, set at selection. The analyst is given this instead of a
     # timestamp so it cannot reason about -- or invent -- dates.
     age_hours: int = 0
+    relevance: int = 0
+    freshness: str = ""
 
     @property
     def key(self) -> str:
@@ -281,13 +294,19 @@ def select_clusters(
     ]
     for cluster in clusters:
         cluster.score = rank(cluster.leader, now)
+        cluster.relevance = relevance(cluster.leader)
+        # Corroboration is earned evidence: two independent outlets carrying
+        # the same event is the strongest non-model signal available.
+        cluster.relevance += min(2, cluster.corroboration - 1)
         # A creator announcing their own deal outranks a trade write-up of the
         # same deal. Lauren's triage rule, +3.
         if cluster.primary:
             cluster.score += 3
+            cluster.relevance += 3
+        cluster.freshness = freshness_tier(cluster.leader, now)
         cluster.age_hours = max(0, round((now - cluster.leader.published_at).total_seconds() / 3600))
-    floor = int(os.environ.get("LOZ_MIN_SCORE") or MIN_SCORE)
-    clusters = [cluster for cluster in clusters if cluster.score >= floor]
+    floor = int(os.environ.get("LOZ_MIN_RELEVANCE") or MIN_RELEVANCE)
+    clusters = [cluster for cluster in clusters if cluster.relevance >= floor]
     clusters.sort(key=lambda c: (-c.score, -c.corroboration, -c.leader.published_at.timestamp()))
     return cap_per_source(clusters, limit)
 
