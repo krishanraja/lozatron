@@ -248,7 +248,10 @@ def _clean(value: object, limit: int) -> str:
     if stop >= limit * 3 // 4:
         return head[:stop + 1]
     space = head.rfind(" ")
-    return (head[:space] if space > 0 else head).rstrip(",;: ") + "\u2026"
+    cut = (head[:space] if space > 0 else head).rstrip(",;: ")
+    # No ellipsis after a full stop: the sentence is complete, it is only the
+    # ones after it that were dropped.
+    return cut if cut.endswith((".", "?", "!")) else cut + "\u2026"
 
 
 def _payload(clusters: Iterable[Any], recent: list[dict]) -> str:

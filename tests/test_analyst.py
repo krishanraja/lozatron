@@ -258,10 +258,12 @@ def test_a_bounded_field_does_not_cut_mid_word():
     assert not got.endswith("wor…")
 
 
-def test_truncation_prefers_a_sentence_end():
+def test_truncation_lands_on_a_sentence_end_when_one_is_near_the_cut():
     from lozatron.analyst import _clean
     got = _clean("One sentence here. Two sentence here. " + "x" * 80, 60)
     assert got == "One sentence here. Two sentence here."
+    # A complete sentence needs no ellipsis; only the ones after it were lost.
+    assert not got.endswith("\u2026")
 
 
 def test_a_short_field_is_untouched():
