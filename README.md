@@ -4,19 +4,84 @@ Lozatron is an email-first creator-business briefing service for Lauren. GitHub 
 
 Production status: live on GitHub Actions since 2026-09-20. Telegram delivery is retired.
 
+## Who this is for
+
+Lauren is President of The Publish Press. She publishes creator-economy news
+for a living, so a brief that re-reports it is a worse version of her own
+product. What this exists to give her is the half she cannot get from her own
+newsroom: the business events that matter to her, and the **mechanics**
+underneath them -- how a media business actually works, and what is worth
+borrowing.
+
+Everything below follows from that, and from
+`lauren-feedback-rules.md`, which is the authority on what ships.
+
 ## What runs
 
-- Briefings at 09:00, 14:00 and 18:00 in `America/New_York`.
-- Breaking-news checks every 90 minutes.
-- Primary-first discovery: 13 creator YouTube channel feeds and 10 subreddits,
-  then 16 trade publications as the confirmation layer, then NewsAPI.
-- Reddit is signal, never proof: a story appearing only in community chatter is
-  not delivered until a primary or trade source corroborates it.
-- A creator's own announcement outranks a trade write-up of the same event.
-- At most two stories per outlet per edition.
-- Deterministic freshness, mandate and duplicate gates.
-- Gmail delivery only after tests and credential verification pass.
-- Delivery state committed only after Gmail returns a message id.
+**One brief a day, 09:00 `America/New_York`.** Nothing else. Three slots plus
+sixteen breaking checks was an assumption nobody made, and it produced a flood
+of low-quality mail; breaking-news is retired. The slot ledger means a delayed
+or repeated run still yields exactly one email, and a fail-closed ceiling in
+`state/delivered.json` caps the day at two whatever else is misconfigured.
+
+**Two tracks, which never compete.**
+
+- *News* -- 17 trade feeds plus seven NewsAPI searches, 48-hour window, at most
+  ten stories, two per outlet. Rule 4 governs it: deals, funding, platform
+  economics, monetization, agencies, regulation with commercial impact. It
+  rejects explainers and commentary, and that has not been relaxed.
+- *Mechanics* -- five media-business publications (Nieman Lab, Press Gazette,
+  A Media Operator, Digital Content Next, Simon Owens), seven-day window,
+  capped at two, one per outlet, omitted entirely when nothing clears. These
+  publish weekly, so a news-shaped freshness window would never surface them.
+  It has its own gate: a media-business vocabulary rather than a creator one,
+  because these say "publishers" and "monetize", never "creator".
+
+Mechanics never counts toward the empty-brief check. A day with no
+creator-business news is a quiet day, and last Tuesday's essay is not a reason
+to send anyway.
+
+**Social is commentary, never a story.** A post is one person's opinion; it is
+not reporting. Social is excluded from clustering outright, so it cannot become
+a numbered entry even by accident. It reaches the brief two ways, both
+aggregate: attached to a story as a count of who is discussing it, without
+changing that story's rank; or, when three or more *distinct* accounts converge
+on a theme with nothing reported behind it, as one line under "Being discussed
+· unconfirmed". Distinct accounts, not posts -- one person posting six times is
+one person, which is how a single thread becomes a "trend".
+
+**The mandate gate reads the article, not the publisher's footer.** Feeds
+append "follow us on Instagram and YouTube · subscribe to our newsletter ·
+we're hiring" to every item, and matching a creator term anywhere in that text
+let general-interest feeds pass on their own chrome: measured live, all three
+Axios stories that cleared the old gate were political. The creator term must
+now be in the headline, and business terms are matched against the first 400
+characters of the summary.
+
+**Reddit and YouTube channel RSS were removed on evidence.** Reddit supplied
+125 of 373 pool items and nothing it surfaced was ever corroborated, which is
+the bar Lauren's own rule sets. YouTube channel RSS returns the last fifteen
+uploads regardless of age; the one item that reached her was a sponsored post.
+
+Everything else holds: deterministic freshness, mandate and duplicate gates;
+clustering, corroboration and the per-outlet cap unconditional in code with no
+flag able to switch them off; Gmail delivery only after tests and credential
+verification pass; delivery state committed only after Gmail returns a message
+id.
+
+## Which sources earn their place
+
+`state/source_yield.json` records, per source per day, how many items were
+fetched, how many were fresh, how many cleared the gate and how many were
+delivered. The weekly cost email reports the table and names any source
+fetched all week that delivered nothing.
+
+This exists because the question had no answer that did not involve a human
+re-running measurements by hand -- which is how Kajabi sat in the list
+contributing nothing, and how a feed serving a leading newline before its XML
+declaration hid thirty live items behind the single word `ParseError` in a
+swallowed error list. Counts only: no titles, no URLs, nothing about what
+Lauren read.
 
 ## Delivery slots
 
@@ -90,10 +155,18 @@ Optional:
 
 Disabled by default, and gated four ways even when enabled.
 
-**When money may be spent.** At most one paid opportunity a day: the morning
-brief only, and only when the free feeds came up short (`LOZ_PAID_MIN_FREE`,
-default 6). Breaking-news runs never spend. This matters more than any cap:
-paid scraping previously fired on every non-dry run with no mode check, so the
+**When money may be spent.** At most one paid opportunity a day, on the morning
+brief. The profiles no longer serve one purpose, so one answer cannot cover
+both. The *social* profiles supply the commentary layer, so they skip the
+free-pool test entirely: their job is to say what is being discussed around the
+stories we already have, which is most useful on the days there are stories --
+exactly the days the old gate skipped them. The *story* profiles keep the
+original bargain and run only when the free feeds came up short
+(`LOZ_PAID_MIN_FREE`, default 10; it moved up from 6 because widening the free
+list raises the count that suppresses them, so otherwise every feed added
+quietly retires the paid layer).
+
+Paid scraping previously fired on every non-dry run with no mode check, so the
 sixteen breaking checks a day could consume the whole budget overnight, before
 the 9am brief that is actually read.
 
