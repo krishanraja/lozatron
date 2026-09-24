@@ -27,14 +27,7 @@ from typing import Any, Iterable
 
 from . import http
 
-ENDPOINT = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
-
-# Tried in order. A model that no longer exists moves to the next rather than
-# taking the run down -- the May 2026 retired-alias incident, where a dead model
-# id put an entire provider into cooldown, is the reason this is a chain and not
-# a constant. Override with LOZ_ANALYST_MODELS.
-DEFAULT_MODELS = ("claude-opus-5", "claude-sonnet-5")
 
 PROMPT_VERSION = 1
 
@@ -50,15 +43,75 @@ MAX_TOKENS = 16000
 # middle, and the ladder below means an overrun costs the analysis, not the brief.
 EFFORT = "medium"
 
-# Token counts are measured; the dollar figure is not. Provider pricing drifts
-# and is not something to assert from memory, so the rate is configurable and
-# every derived amount is labelled an estimate. Recording a guessed price as a
-# settled charge is the exact mistake the Apify ledger already corrected.
-# These are the first model in the chain; a fall-through to the second overstates.
-DEFAULT_USD_PER_MTOK_IN = 5.00
-DEFAULT_USD_PER_MTOK_OUT = 25.00
-MAX_FIELD = 400
+# Long enough for a three-sentence thought. Opus writes denser than the model
+# this layer was built against, and at 400 the live cutover put an ellipsis
+# through the middle of most `why_it_matters` fields -- a truncated argument
+# reads as a worse argument, not as a shorter one. Still a hard cap, because an
+# unbounded field is an unbounded email.
+MAX_FIELD = 550
 MAX_LEDE = 600
+
+# --- Providers -----------------------------------------------------------
+#
+# Two of them, one wall. Anthropic is what runs; OpenAI stays wired so that a
+# provider which turns out substandard is a variable away from being swapped
+# rather than a rewrite away. Everything downstream of `_read` is shared, so a
+# switch changes which endpoint is called and nothing about what is accepted.
+#
+# Each carries its own model chain. A model that no longer exists moves to the
+# next rather than taking the run down -- the May 2026 retired-alias incident,
+# where a dead model id put an entire provider into cooldown, is the reason
+# this is a chain and not a constant. `LOZ_ANALYST_MODELS` overrides it, and is
+# read per provider so a chain left over from the other one cannot be inherited.
+#
+# The rates are the first model in each chain. Provider pricing drifts and is
+# not something to assert from memory, so both are overridable and every
+# derived amount is labelled an estimate. A fall-through to the second model in
+# a chain overstates rather than understates, which is the safe direction.
+
+
+@dataclasses.dataclass(slots=True, frozen=True)
+class Provider:
+    name: str
+    endpoint: str
+    key_var: str
+    models: tuple[str, ...]
+    usd_per_mtok_in: float
+    usd_per_mtok_out: float
+
+
+ANTHROPIC = Provider(
+    name="anthropic",
+    endpoint="https://api.anthropic.com/v1/messages",
+    key_var="ANTHROPIC_API_KEY",
+    models=("claude-opus-5", "claude-sonnet-5"),
+    usd_per_mtok_in=5.00,
+    usd_per_mtok_out=25.00,
+)
+
+OPENAI = Provider(
+    name="openai",
+    endpoint="https://api.openai.com/v1/chat/completions",
+    key_var="OPENAI_API_KEY",
+    models=("gpt-5", "gpt-4.1", "gpt-4o"),
+    usd_per_mtok_in=1.25,
+    usd_per_mtok_out=10.00,
+)
+
+PROVIDERS = {provider.name: provider for provider in (ANTHROPIC, OPENAI)}
+DEFAULT_PROVIDER = ANTHROPIC
+
+
+def provider() -> Provider:
+    """The provider this run uses. An unknown name falls back to the default.
+
+    Falling back rather than raising is the same choice the rest of this module
+    makes: a typo in a repository variable degrades the analysis at worst, and
+    must never be able to take the brief down.
+    """
+    from .core import env_text
+    return PROVIDERS.get(env_text("LOZ_ANALYST_PROVIDER", "").lower(), DEFAULT_PROVIDER)
+
 
 SYSTEM = (
     "You are the analyst for a daily creator-economy intelligence brief read by "
@@ -226,21 +279,37 @@ class LlmLedger:
         )
 
 
-def estimate_cost(usage: dict[str, Any]) -> float | None:
-    """Cost from measured tokens at a configurable rate. None when unknown."""
+def estimate_cost(usage: dict[str, Any], on: Provider | None = None) -> float | None:
+    """Cost from measured tokens at a configurable rate. None when unknown.
+
+    The default rate follows the provider, so a switch reprices without anyone
+    having to remember to set two variables alongside it. An explicit
+    `LOZ_LLM_USD_PER_MTOK_*` still wins over both.
+    """
     prompt = usage.get("prompt_tokens")
     completion = usage.get("completion_tokens")
     if not isinstance(prompt, (int, float)) or not isinstance(completion, (int, float)):
         return None
     from .core import env_float
-    rate_in = env_float("LOZ_LLM_USD_PER_MTOK_IN", DEFAULT_USD_PER_MTOK_IN)
-    rate_out = env_float("LOZ_LLM_USD_PER_MTOK_OUT", DEFAULT_USD_PER_MTOK_OUT)
+    on = on or provider()
+    rate_in = env_float("LOZ_LLM_USD_PER_MTOK_IN", on.usd_per_mtok_in)
+    rate_out = env_float("LOZ_LLM_USD_PER_MTOK_OUT", on.usd_per_mtok_out)
     return round((prompt / 1_000_000) * rate_in + (completion / 1_000_000) * rate_out, 6)
 
 
-def models() -> tuple[str, ...]:
+def models(on: Provider | None = None) -> tuple[str, ...]:
+    """The model chain for this provider.
+
+    `LOZ_ANALYST_MODELS` sets the chain for whichever provider is active;
+    `LOZ_ANALYST_MODELS_ANTHROPIC` and `_OPENAI` set one without touching the
+    other. The per-provider names exist because a chain of gpt ids left behind
+    by an earlier provider would otherwise be inherited wholesale by the new
+    one and fail every model in turn before anyone read the variable.
+    """
     from .core import env_list
-    return tuple(env_list("LOZ_ANALYST_MODELS")) or DEFAULT_MODELS
+    on = on or provider()
+    named = env_list(f"LOZ_ANALYST_MODELS_{on.name.upper()}", "LOZ_ANALYST_MODELS")
+    return tuple(named) or on.models
 
 
 def _clean(value: object, limit: int) -> str:
@@ -319,13 +388,14 @@ def _usage(raw: object) -> dict[str, Any]:
     """Normalise provider token counts onto the ledger's own names.
 
     The ledger, the cost report and forty-five days of recorded runs all speak
-    prompt/completion. Translating here rather than there means the history
-    written before this cutover and the rows written after it are the same
-    shape, and nothing downstream has to know the provider changed.
+    prompt/completion. Translating here rather than there means rows written
+    under either provider are the same shape, history written before the
+    Anthropic cutover still totals, and nothing downstream has to know which
+    provider produced a run.
     """
     usage = raw if isinstance(raw, dict) else {}
-    prompt = usage.get("input_tokens")
-    completion = usage.get("output_tokens")
+    prompt = usage.get("input_tokens", usage.get("prompt_tokens"))
+    completion = usage.get("output_tokens", usage.get("completion_tokens"))
     if not isinstance(prompt, (int, float)) or not isinstance(completion, (int, float)):
         return dict(usage)
     return {
@@ -335,41 +405,71 @@ def _usage(raw: object) -> dict[str, Any]:
     }
 
 
-def _content_json(response: dict[str, Any]) -> str | None:
-    """The JSON the model was constrained to return, or None.
+def _read(response: dict[str, Any], on: Provider) -> tuple[str | None, dict[str, Any], str]:
+    """(answer, usage, stop reason) from a provider response.
 
-    Reasoning arrives as its own content blocks ahead of the answer, so this
-    looks for the first text block rather than assuming a position.
+    The only place in this module that knows one provider's response shape from
+    another's. Anthropic returns content blocks, with reasoning ahead of the
+    answer, so the text block is searched for rather than indexed; OpenAI
+    returns a single message. Either way what comes back out is the same three
+    things, and everything past this point is shared.
     """
+    usage = _usage(response.get("usage"))
+    if on.name == "openai":
+        try:
+            choice = response["choices"][0]
+        except (KeyError, IndexError, TypeError):
+            return None, usage, ""
+        text = (choice.get("message") or {}).get("content")
+        stop = str(choice.get("finish_reason") or "")
+        # OpenAI names the token ceiling differently. Both map onto the one
+        # reason the caller reports, so the naming stays provider-independent.
+        return (str(text) if text is not None else None), usage, ("max_tokens" if stop == "length" else stop)
     for block in response.get("content") or []:
         if isinstance(block, dict) and block.get("type") == "text":
-            return str(block.get("text") or "")
-    return None
+            return str(block.get("text") or ""), usage, str(response.get("stop_reason") or "")
+    return None, usage, str(response.get("stop_reason") or "")
 
 
-def _request(model: str, payload: str, api_key: str, timeout: float) -> dict[str, Any]:
-    body = json.dumps({
-        "model": model,
-        "max_tokens": MAX_TOKENS,
-        "system": SYSTEM,
-        "messages": [{"role": "user", "content": payload}],
-        # The schema is enforced at the provider as well as in `validate`. That
-        # is a convenience -- the wall below is the contract -- but it keeps the
-        # common case from spending a call on a malformed answer.
-        "output_config": {
-            "effort": EFFORT,
-            "format": {"type": "json_schema", "schema": SCHEMA},
-        },
-    }).encode("utf-8")
-    return http.request_json(
-        ENDPOINT,
-        method="POST",
-        data=body,
-        headers={
+def _request(model: str, payload: str, api_key: str, timeout: float,
+             on: Provider) -> dict[str, Any]:
+    """One call. The schema is enforced at the provider as well as in
+    `validate` -- a convenience, since the wall below is the contract, but it
+    keeps the common case from spending a call on a malformed answer."""
+    if on.name == "openai":
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": payload},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "brief_analysis", "strict": True, "schema": SCHEMA},
+            },
+        }
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    else:
+        body = {
+            "model": model,
+            "max_tokens": MAX_TOKENS,
+            "system": SYSTEM,
+            "messages": [{"role": "user", "content": payload}],
+            "output_config": {
+                "effort": EFFORT,
+                "format": {"type": "json_schema", "schema": SCHEMA},
+            },
+        }
+        headers = {
             "x-api-key": api_key,
             "anthropic-version": ANTHROPIC_VERSION,
             "Content-Type": "application/json",
-        },
+        }
+    return http.request_json(
+        on.endpoint,
+        method="POST",
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
         timeout=timeout,
         retries=2,
     )
@@ -438,7 +538,8 @@ def analyse(
     """
     if not clusters:
         return None, "no_stories"
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    on = provider()
+    api_key = os.environ.get(on.key_var, "").strip()
     if not api_key:
         return None, "no_api_key"
     if not ledger.permits(estimate_usd, cap_usd, monthly_cap_usd):
@@ -448,10 +549,10 @@ def analyse(
     known = {cluster.key for cluster in clusters}
     last = "request_failed"
 
-    for model in models():
+    for model in models(on):
         row = ledger.reserve(estimate_usd, model)
         try:
-            response = _request(model, payload, api_key, timeout)
+            response = _request(model, payload, api_key, timeout, on)
         except Exception as exc:  # noqa: BLE001 - classification is the point
             reason = _classify(exc)
             ledger.settle(row, usd=0.0 if reason == "model_not_found" else estimate_usd, status=reason)
@@ -460,20 +561,18 @@ def analyse(
                 continue          # a retired alias is not an outage; try the next model
             return None, reason
 
-        usage = _usage(response.get("usage"))
+        content, usage, stop = _read(response, on)
         # Settle on what the call actually consumed, not the reservation. The
         # reservation stands only when the provider reports no token counts.
-        measured = estimate_cost(usage)
+        measured = estimate_cost(usage, on)
         ledger.settle(row, usd=measured if measured is not None else estimate_usd,
                       status="succeeded", usage=usage)
 
         # A declined request and a response cut off at the token ceiling are
         # both ordinary outcomes with their own names. Reporting either as
         # "unparseable" would send someone looking for a bug in the parser.
-        stop = response.get("stop_reason")
         if stop == "refusal":
             return None, "refused"
-        content = _content_json(response)
         try:
             if content is None:
                 raise ValueError("no text block in response")

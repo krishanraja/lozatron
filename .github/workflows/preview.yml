@@ -17,6 +17,12 @@ on:
         default: live
         type: choice
         options: [live, "off"]
+      provider:
+        description: Which analyst provider to render with
+        required: true
+        default: anthropic
+        type: choice
+        options: [anthropic, openai]
 
 permissions:
   contents: read
@@ -47,7 +53,11 @@ jobs:
           LOZ_OPS_EMAILS: ${{ secrets.LOZ_OPS_EMAILS }}
           LOZ_CC_EMAILS: ${{ secrets.LOZ_CC_EMAILS }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          # Both keys, so a preview can be rendered on either provider and the
+          # two read side by side before the live brief is switched over.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LOZ_ANALYST_PROVIDER: ${{ inputs.provider }}
           LOZ_ANALYST: ${{ inputs.analyst }}
           LOZ_ANALYST_MODELS: ${{ vars.LOZ_ANALYST_MODELS }}
           LOZ_LLM_DAILY_USD_CAP: ${{ vars.LOZ_LLM_DAILY_USD_CAP }}

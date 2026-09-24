@@ -290,6 +290,78 @@ def test_the_request_carries_the_schema_and_the_key_in_the_header(tmp_path, monk
     assert seen["body"]["max_tokens"] == analyst.MAX_TOKENS
 
 
+# --- the provider switch ---
+
+def test_anthropic_is_what_runs_by_default(monkeypatch):
+    monkeypatch.delenv("LOZ_ANALYST_PROVIDER", raising=False)
+    assert analyst.provider().name == "anthropic"
+    assert analyst.models() == ("claude-opus-5", "claude-sonnet-5")
+
+
+def test_a_typo_in_the_provider_variable_falls_back_rather_than_raising(monkeypatch):
+    """A misspelled repository variable must cost the analysis at worst."""
+    monkeypatch.setenv("LOZ_ANALYST_PROVIDER", "anthorpic")
+    assert analyst.provider() is analyst.DEFAULT_PROVIDER
+
+
+def test_switching_provider_switches_endpoint_key_models_and_rate(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOZ_ANALYST_PROVIDER", "openai")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    monkeypatch.delenv("LOZ_ANALYST_MODELS", raising=False)
+    c = cluster()
+    seen = {}
+
+    def fake(url, **kw):
+        seen["url"], seen["headers"] = url, kw["headers"]
+        seen["body"] = json.loads(kw["data"])
+        return {"choices": [{"finish_reason": "stop",
+                             "message": {"content": json.dumps(payload(c.key))}}],
+                "usage": {"prompt_tokens": 1_000_000, "completion_tokens": 0}}
+
+    monkeypatch.setattr(analyst.http, "request_json", fake)
+    path = tmp_path / "l.json"
+    result, reason = analyse([c], [], ledger=LlmLedger(path).load())
+    assert reason == "ok" and result.model == "gpt-5"
+    assert seen["url"] == "https://api.openai.com/v1/chat/completions"
+    assert seen["headers"]["Authorization"] == "Bearer sk-openai-test"
+    assert "x-api-key" not in seen["headers"]
+    assert seen["body"]["response_format"]["json_schema"]["schema"] == analyst.SCHEMA
+    # Priced at OpenAI's rate, not the one the Anthropic default carries.
+    row = [r for r in LlmLedger(path).load().rows if r.get("status") == "succeeded"][-1]
+    assert row["usd"] == 1.25
+
+
+def test_the_openai_key_alone_is_not_enough_while_anthropic_is_selected(monkeypatch, tmp_path):
+    """Selecting a provider selects its key. Reading whichever key happened to
+    be set would make a half-finished switch look like a working one."""
+    monkeypatch.delenv("LOZ_ANALYST_PROVIDER", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    result, reason = analyse([cluster()], [], ledger=LlmLedger(tmp_path / "l.json").load())
+    assert result is None and reason == "no_api_key"
+
+
+def test_a_model_chain_is_not_inherited_across_a_switch(monkeypatch):
+    """A stale chain of gpt ids would fail every model in turn on Anthropic."""
+    monkeypatch.setenv("LOZ_ANALYST_MODELS_ANTHROPIC", "claude-opus-5")
+    monkeypatch.setenv("LOZ_ANALYST_MODELS", "gpt-5,gpt-4o")
+    monkeypatch.setenv("LOZ_ANALYST_PROVIDER", "anthropic")
+    assert analyst.models() == ("claude-opus-5",)
+    monkeypatch.setenv("LOZ_ANALYST_PROVIDER", "openai")
+    assert analyst.models() == ("gpt-5", "gpt-4o")
+
+
+def test_the_openai_token_ceiling_reports_the_same_reason(monkeypatch, tmp_path):
+    """`length` there, `max_tokens` here, one name for the operator."""
+    monkeypatch.setenv("LOZ_ANALYST_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    monkeypatch.setattr(analyst.http, "request_json", lambda url, **kw: {
+        "choices": [{"finish_reason": "length", "message": {"content": "{ trunc"}}]})
+    result, reason = analyse([cluster()], [], ledger=LlmLedger(tmp_path / "l.json").load())
+    assert result is None and reason == "truncated_response"
+
+
 # --- spend ---
 
 def test_spend_is_reserved_before_the_call(tmp_path, monkeypatch):

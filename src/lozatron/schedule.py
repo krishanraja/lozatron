@@ -24,10 +24,20 @@ EASTERN = "America/New_York"
 # GitHub fires the workflow.
 SLOTS_ET: tuple[int, ...] = (9,)
 
-# Wide enough to absorb the observed 2.6-hour Actions delay, and far shorter
-# than the 24-hour gap between slots, so a wholly missed slot is never
-# resurrected on top of the next day's.
-GRACE_MINUTES = 200
+# Wide enough to absorb the observed Actions delay, and far shorter than the
+# 24-hour gap between slots, so a wholly missed slot is never resurrected on
+# top of the next day's.
+#
+# 200 was sized against a 2.6-hour worst case and was not enough. The scheduled
+# runs on 22 and 23 September arrived at 13:24 and 13:31 ET -- about four and a
+# half hours late -- found the 09:00 window closed at 12:20, reported `not_due`
+# and sent nothing. Two days of silence, from a gate whose entire job is to
+# stop exactly that.
+#
+# Six hours closes at 15:00 ET. That is past every delay this repository has
+# observed and still inside the working day, so a brief that arrives late
+# arrives as a late morning brief rather than as an evening one.
+GRACE_MINUTES = 360
 
 
 def slot_key(moment_et: dt.datetime) -> str:

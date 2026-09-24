@@ -2,12 +2,21 @@ name: Lozatron briefings
 
 on:
   schedule:
-    # One brief a day, 9am Eastern. The extra slots plus the retired
-    # breaking-news workflow were how sixteen possible emails a day happened.
-    # The slot ledger caps delivery at one per slot, so a delayed or repeated
-    # run still produces exactly one email.
-    - cron: "0 9 * * *"
-      timezone: "America/New_York"
+    # One brief a day, 9am Eastern -- but the hour here is UTC, always. Actions
+    # cron has no timezone: a `timezone:` key beside it is accepted and then
+    # ignored, which is how this workflow spent two days firing outside its own
+    # delivery window. The slot lives in schedule.py, in real Eastern time with
+    # DST; these are only the knocks on the door.
+    #
+    # Three of them, because Actions delays scheduled runs by hours and
+    # sometimes drops them entirely. The slot ledger caps delivery at one per
+    # slot, so extra firings cannot produce a second email -- a run whose slot
+    # is already recorded exits in under a second having sent nothing. 13:00 is
+    # 09:00 EDT and 08:00 EST, so in winter the first knock is early and the
+    # later two carry it.
+    - cron: "0 13 * * *"
+    - cron: "0 15 * * *"
+    - cron: "0 17 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -67,7 +76,14 @@ jobs:
           LOZ_APIFY_MONTHLY_USD_CAP: ${{ vars.LOZ_APIFY_MONTHLY_USD_CAP }}
           # The analyst. Live unless the variable explicitly says otherwise, so
           # the kill switch survives without needing to be set to go live.
+          # Both keys travel; `LOZ_ANALYST_PROVIDER` decides which one is read.
+          # Carrying the unused one costs nothing and makes swapping providers
+          # a repository variable rather than a commit -- which is the whole
+          # point of having two, and the difference between reverting a
+          # substandard provider this morning and next week.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LOZ_ANALYST_PROVIDER: ${{ vars.LOZ_ANALYST_PROVIDER }}
           LOZ_ANALYST: ${{ vars.LOZ_ANALYST || 'live' }}
           LOZ_ANALYST_MODELS: ${{ vars.LOZ_ANALYST_MODELS }}
           LOZ_LLM_DAILY_USD_CAP: ${{ vars.LOZ_LLM_DAILY_USD_CAP }}

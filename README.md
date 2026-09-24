@@ -109,15 +109,26 @@ whatever else is misconfigured.
 ## Delivery slots
 
 GitHub's scheduler is best-effort: observed runs on this repository arrive
-between 22 minutes and 2.6 hours after their nominal time, and some slots are
-dropped outright. Scheduled briefings therefore do not ask "what hour is it?" —
-they ask which Eastern slot is still outstanding, within a 200-minute grace
-window, and deliver that. A delayed run still delivers. A slot already recorded
-in `state/delivered.json` cannot fire twice. A slot missed beyond grace stays
-missed rather than arriving in the evening dressed as the morning brief.
+between 22 minutes and four and a half hours after their nominal time, and some
+slots are dropped outright. Scheduled briefings therefore do not ask "what hour
+is it?" — they ask which Eastern slot is still outstanding, within a 360-minute
+grace window, and deliver that. A delayed run still delivers. A slot already
+recorded in `state/delivered.json` cannot fire twice. A slot missed beyond grace
+stays missed rather than arriving in the evening dressed as the morning brief.
+
+The window is the half of this that lives in code, in real Eastern time with
+DST. The other half is the workflow's cron hours, which are **always UTC** —
+Actions cron accepts a `timezone:` key and then ignores it. That mismatch cost
+two days of delivery in September 2026: the runs arrived at 13:30 ET, the
+09:00 window had closed at 12:20, and both reported `not_due` and sent nothing.
+So the workflow now knocks three times, at 13:00, 15:00 and 17:00 UTC, and the
+slot ledger caps the result at one email; a run whose slot is already recorded
+exits in under a second. `tests/test_schedule.py` checks the workflow's own
+cron hours against the window in both EDT and EST, because the two halves are
+edited months apart and a cron outside its window fails silently.
 
 `workflow_dispatch` always bypasses the gate, so a human can force a delivery.
-`LOZ_BRIEF_SLOTS_ET` overrides the default `9,14,18`.
+`LOZ_BRIEF_SLOTS_ET` overrides the default, which is `9`.
 
 Each edition carries a deterministic `Message-ID`. The Gmail send is the one
 call that is never retried on a timeout or server error, because either may
@@ -138,10 +149,24 @@ unknown id, or a field that merely echoes its input. It does not choose what
 ships, how many ship, or in what order: deterministic gates and `rank()` own
 all three.
 
-The provider is the Anthropic Messages API, called over the same stdlib HTTP
-layer as every other dependency here. `ANTHROPIC_API_KEY` authenticates it and
-`LOZ_ANALYST_MODELS` overrides the model chain, which defaults to Claude Opus 5
-falling back to Claude Sonnet 5.
+Two providers, one wall. `LOZ_ANALYST_PROVIDER` takes `anthropic` (the default,
+and what runs) or `openai`, and selects the endpoint, the key, the model chain
+and the default price per million together, so switching is one repository
+variable rather than a commit. An unrecognised name falls back to the default
+rather than raising. Both are called over the same stdlib HTTP layer as every
+other dependency here.
+
+| | `anthropic` | `openai` |
+| --- | --- | --- |
+| Key | `ANTHROPIC_API_KEY` | `OPENAI_API_KEY` |
+| Models | `claude-opus-5`, `claude-sonnet-5` | `gpt-5`, `gpt-4.1`, `gpt-4o` |
+
+Both keys are passed to the workflow whichever is selected, so a provider that
+turns out substandard is reverted from the Actions settings page without
+touching the code. `LOZ_ANALYST_MODELS` overrides the chain for whichever
+provider is active; `LOZ_ANALYST_MODELS_ANTHROPIC` and `_OPENAI` override one
+without touching the other. The preview workflow takes the provider as a
+dispatch input, so both can be rendered and read side by side first.
 
 Every failure degrades to the deterministic brief and names its reason in the
 step summary: `auth_failed`, `quota_exhausted`, `model_not_found`,
@@ -180,6 +205,7 @@ Optional:
 - `NEWSAPI_KEY`
 - `APIFY_TOKEN`
 - `ANTHROPIC_API_KEY`, required only when `LOZ_ANALYST` is not `off`
+- `OPENAI_API_KEY`, required only when `LOZ_ANALYST_PROVIDER` is `openai`
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, required only when `LOZ_ARCHIVE=true`
 
 ## Paid sources and cost control
