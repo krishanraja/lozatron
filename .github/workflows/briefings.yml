@@ -67,7 +67,7 @@ jobs:
           LOZ_APIFY_MONTHLY_USD_CAP: ${{ vars.LOZ_APIFY_MONTHLY_USD_CAP }}
           # The analyst. Live unless the variable explicitly says otherwise, so
           # the kill switch survives without needing to be set to go live.
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LOZ_ANALYST: ${{ vars.LOZ_ANALYST || 'live' }}
           LOZ_ANALYST_MODELS: ${{ vars.LOZ_ANALYST_MODELS }}
           LOZ_LLM_DAILY_USD_CAP: ${{ vars.LOZ_LLM_DAILY_USD_CAP }}

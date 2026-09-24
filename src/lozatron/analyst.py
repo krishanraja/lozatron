@@ -27,22 +27,36 @@ from typing import Any, Iterable
 
 from . import http
 
-ENDPOINT = "https://api.openai.com/v1/chat/completions"
+ENDPOINT = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
 
 # Tried in order. A model that no longer exists moves to the next rather than
 # taking the run down -- the May 2026 retired-alias incident, where a dead model
 # id put an entire provider into cooldown, is the reason this is a chain and not
 # a constant. Override with LOZ_ANALYST_MODELS.
-DEFAULT_MODELS = ("gpt-5", "gpt-4.1", "gpt-4o")
+DEFAULT_MODELS = ("claude-opus-5", "claude-sonnet-5")
 
 PROMPT_VERSION = 1
+
+# Bounded so a runaway response cannot become an unbounded bill. The brief's
+# own field caps mean a complete answer is a few thousand tokens; the headroom
+# above that is for the model's reasoning, which is billed as output. A
+# response that hits the cap comes back as `truncated_response` rather than as
+# half a brief.
+MAX_TOKENS = 16000
+
+# Reasoning depth. Low would save pennies on a judgement call that is the whole
+# point of the layer; high would put a 90-second timeout in play. Medium is the
+# middle, and the ladder below means an overrun costs the analysis, not the brief.
+EFFORT = "medium"
 
 # Token counts are measured; the dollar figure is not. Provider pricing drifts
 # and is not something to assert from memory, so the rate is configurable and
 # every derived amount is labelled an estimate. Recording a guessed price as a
 # settled charge is the exact mistake the Apify ledger already corrected.
-DEFAULT_USD_PER_MTOK_IN = 1.25
-DEFAULT_USD_PER_MTOK_OUT = 10.00
+# These are the first model in the chain; a fall-through to the second overstates.
+DEFAULT_USD_PER_MTOK_IN = 5.00
+DEFAULT_USD_PER_MTOK_OUT = 25.00
 MAX_FIELD = 400
 MAX_LEDE = 600
 
@@ -278,38 +292,84 @@ def _payload(clusters: Iterable[Any], recent: list[dict]) -> str:
 
 
 def _classify(exc: BaseException) -> str:
+    """Name the failure from the status code.
+
+    The status is what survives the HTTP layer -- it does not carry the body
+    through -- so the text checks are a second chance, not the mechanism. One
+    consequence is worth knowing: an exhausted balance arrives as a 400 whose
+    explanation is only in the body, so it reports `request_failed` rather than
+    `quota_exhausted`. The brief still ships; only the naming is coarser.
+    """
     status = getattr(exc, "status", None)
     text = str(exc).lower()
-    if status == 401 or "invalid_api_key" in text:
+    if status in (401, 403) or "authentication_error" in text or "permission_error" in text:
         return "auth_failed"
-    if status == 402 or "insufficient_quota" in text or "billing" in text:
+    if status == 402 or "credit balance" in text or "billing" in text:
         return "quota_exhausted"
-    if status == 404 or "model_not_found" in text or "does not exist" in text:
+    if status == 404 or "not_found_error" in text or "does not exist" in text:
         return "model_not_found"
     if status == 429:
         return "rate_limited"
-    if status and 500 <= status < 600:
+    if status and 500 <= status < 600:   # includes 529, the overloaded signal
         return "provider_error"
     return "request_failed"
+
+
+def _usage(raw: object) -> dict[str, Any]:
+    """Normalise provider token counts onto the ledger's own names.
+
+    The ledger, the cost report and forty-five days of recorded runs all speak
+    prompt/completion. Translating here rather than there means the history
+    written before this cutover and the rows written after it are the same
+    shape, and nothing downstream has to know the provider changed.
+    """
+    usage = raw if isinstance(raw, dict) else {}
+    prompt = usage.get("input_tokens")
+    completion = usage.get("output_tokens")
+    if not isinstance(prompt, (int, float)) or not isinstance(completion, (int, float)):
+        return dict(usage)
+    return {
+        "prompt_tokens": int(prompt),
+        "completion_tokens": int(completion),
+        "total_tokens": int(prompt) + int(completion),
+    }
+
+
+def _content_json(response: dict[str, Any]) -> str | None:
+    """The JSON the model was constrained to return, or None.
+
+    Reasoning arrives as its own content blocks ahead of the answer, so this
+    looks for the first text block rather than assuming a position.
+    """
+    for block in response.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            return str(block.get("text") or "")
+    return None
 
 
 def _request(model: str, payload: str, api_key: str, timeout: float) -> dict[str, Any]:
     body = json.dumps({
         "model": model,
-        "messages": [
-            {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": payload},
-        ],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {"name": "brief_analysis", "strict": True, "schema": SCHEMA},
+        "max_tokens": MAX_TOKENS,
+        "system": SYSTEM,
+        "messages": [{"role": "user", "content": payload}],
+        # The schema is enforced at the provider as well as in `validate`. That
+        # is a convenience -- the wall below is the contract -- but it keeps the
+        # common case from spending a call on a malformed answer.
+        "output_config": {
+            "effort": EFFORT,
+            "format": {"type": "json_schema", "schema": SCHEMA},
         },
     }).encode("utf-8")
     return http.request_json(
         ENDPOINT,
         method="POST",
         data=body,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": ANTHROPIC_VERSION,
+            "Content-Type": "application/json",
+        },
         timeout=timeout,
         retries=2,
     )
@@ -378,7 +438,7 @@ def analyse(
     """
     if not clusters:
         return None, "no_stories"
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         return None, "no_api_key"
     if not ledger.permits(estimate_usd, cap_usd, monthly_cap_usd):
@@ -400,17 +460,26 @@ def analyse(
                 continue          # a retired alias is not an outage; try the next model
             return None, reason
 
-        usage = response.get("usage") or {}
+        usage = _usage(response.get("usage"))
         # Settle on what the call actually consumed, not the reservation. The
         # reservation stands only when the provider reports no token counts.
         measured = estimate_cost(usage)
         ledger.settle(row, usd=measured if measured is not None else estimate_usd,
                       status="succeeded", usage=usage)
+
+        # A declined request and a response cut off at the token ceiling are
+        # both ordinary outcomes with their own names. Reporting either as
+        # "unparseable" would send someone looking for a bug in the parser.
+        stop = response.get("stop_reason")
+        if stop == "refusal":
+            return None, "refused"
+        content = _content_json(response)
         try:
-            content = response["choices"][0]["message"]["content"]
+            if content is None:
+                raise ValueError("no text block in response")
             raw = json.loads(content)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError):
-            return None, "unparseable_response"
+        except (TypeError, ValueError):   # JSONDecodeError is a ValueError
+            return None, "truncated_response" if stop == "max_tokens" else "unparseable_response"
 
         lede, kept, dropped = validate(raw, known)
         if not kept:

@@ -48,6 +48,25 @@ def payload(key, **over):
             "stories": [good_story(key, **over)]}
 
 
+def reply(raw, **over):
+    """A provider response in the shape the wall actually receives.
+
+    The reasoning block in front is deliberate: the answer is not the first
+    content block, and a parser that assumes it is would pass this file's tests
+    and fail on the first live call.
+    """
+    body = {
+        "content": [
+            {"type": "thinking", "thinking": ""},
+            {"type": "text", "text": raw if isinstance(raw, str) else json.dumps(raw)},
+        ],
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 520, "output_tokens": 830},
+    }
+    body.update(over)
+    return body
+
+
 # --- validation accepts what it should ---
 
 def test_valid_response_is_accepted():
@@ -135,7 +154,7 @@ def test_the_model_payload_contains_no_url_and_no_timestamp():
 # --- failure paths all degrade, none raise ---
 
 def test_missing_api_key_degrades(tmp_path, monkeypatch):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     result, reason = analyse([cluster()], [], ledger=LlmLedger(tmp_path / "l.json").load())
     assert result is None and reason == "no_api_key"
 
@@ -146,9 +165,9 @@ def test_no_stories_degrades(tmp_path):
 
 
 def test_budget_exhaustion_is_fail_closed(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     ledger = LlmLedger(tmp_path / "l.json").load()
-    ledger.reserve(2.00, "gpt-5")
+    ledger.reserve(2.00, "claude-opus-5")
     result, reason = analyse([cluster()], [], ledger=ledger, cap_usd=2.00)
     assert result is None and reason == "budget_exhausted"
 
@@ -158,7 +177,7 @@ def test_budget_exhaustion_is_fail_closed(tmp_path, monkeypatch):
     (429, "rate_limited"), (503, "provider_error"),
 ])
 def test_provider_failures_are_named_not_generic(tmp_path, monkeypatch, status, expected):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
     def boom(*a, **k):
         raise http_error(status)
@@ -175,7 +194,7 @@ def http_error(status):
 
 def test_retired_model_falls_through_the_chain(tmp_path, monkeypatch):
     """A dead model id took a whole provider down in May 2026. Here it is a hop."""
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("LOZ_ANALYST_MODELS", "retired-model,working-model")
     c = cluster()
     seen = []
@@ -185,8 +204,7 @@ def test_retired_model_falls_through_the_chain(tmp_path, monkeypatch):
         seen.append(model)
         if model == "retired-model":
             raise http_error(404)
-        return {"choices": [{"message": {"content": json.dumps(payload(c.key))}}],
-                "usage": {"total_tokens": 900}}
+        return reply(payload(c.key))
 
     monkeypatch.setattr(analyst.http, "request_json", fake)
     result, reason = analyse([c], [], ledger=LlmLedger(tmp_path / "l.json").load())
@@ -195,39 +213,88 @@ def test_retired_model_falls_through_the_chain(tmp_path, monkeypatch):
 
 
 def test_unparseable_content_degrades(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(analyst.http, "request_json",
-                        lambda url, **kw: {"choices": [{"message": {"content": "{ truncated"}}]})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(analyst.http, "request_json", lambda url, **kw: reply("{ truncated"))
     result, reason = analyse([cluster()], [], ledger=LlmLedger(tmp_path / "l.json").load())
     assert result is None and reason == "unparseable_response"
 
 
 def test_all_stories_rejected_degrades(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     c = cluster()
     bad = payload(c.key, what_happened="Read https://example.com for the details of this deal.")
-    monkeypatch.setattr(analyst.http, "request_json",
-                        lambda url, **kw: {"choices": [{"message": {"content": json.dumps(bad)}}]})
+    monkeypatch.setattr(analyst.http, "request_json", lambda url, **kw: reply(bad))
     result, reason = analyse([c], [], ledger=LlmLedger(tmp_path / "l.json").load())
     assert result is None and reason == "schema_rejected"
 
 
 def test_partial_analysis_is_reported_as_partial(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     a, b = cluster(), cluster("Substack raises funding round from investors")
     raw = {"lede": "Two moves worth noting in the creator economy today overall.",
            "stories": [good_story(a.key), good_story("cl_0000000000000000")]}
-    monkeypatch.setattr(analyst.http, "request_json",
-                        lambda url, **kw: {"choices": [{"message": {"content": json.dumps(raw)}}]})
+    monkeypatch.setattr(analyst.http, "request_json", lambda url, **kw: reply(raw))
     result, reason = analyse([a, b], [], ledger=LlmLedger(tmp_path / "l.json").load())
     assert reason == "partial_analysis" and result.partial
+
+
+def test_a_declined_request_is_named_not_reported_as_a_parse_failure(tmp_path, monkeypatch):
+    """A refusal is an ordinary outcome. Calling it unparseable sends someone
+    looking for a bug in the parser."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(analyst.http, "request_json", lambda url, **kw: reply(
+        "", stop_reason="refusal", content=[{"type": "text", "text": ""}]))
+    result, reason = analyse([cluster()], [], ledger=LlmLedger(tmp_path / "l.json").load())
+    assert result is None and reason == "refused"
+
+
+def test_hitting_the_token_ceiling_is_named_truncation(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    c = cluster()
+    cut = json.dumps(payload(c.key))[:120]
+    monkeypatch.setattr(analyst.http, "request_json",
+                        lambda url, **kw: reply(cut, stop_reason="max_tokens"))
+    result, reason = analyse([c], [], ledger=LlmLedger(tmp_path / "l.json").load())
+    assert result is None and reason == "truncated_response"
+
+
+def test_the_answer_is_found_past_the_reasoning_blocks(tmp_path, monkeypatch):
+    """Reasoning arrives as content blocks of its own, ahead of the answer."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    c = cluster()
+    monkeypatch.setattr(analyst.http, "request_json", lambda url, **kw: reply(payload(c.key)))
+    result, reason = analyse([c], [], ledger=LlmLedger(tmp_path / "l.json").load())
+    assert reason == "ok" and result.per_cluster[c.key].what_happened
+
+
+def test_the_request_carries_the_schema_and_the_key_in_the_header(tmp_path, monkeypatch):
+    """The key is a header, never a query string, and the schema is enforced at
+    the provider as well as in `validate`."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    c = cluster()
+    seen = {}
+
+    def fake(url, **kw):
+        seen["url"], seen["headers"] = url, kw["headers"]
+        seen["body"] = json.loads(kw["data"])
+        return reply(payload(c.key))
+
+    monkeypatch.setattr(analyst.http, "request_json", fake)
+    analyse([c], [], ledger=LlmLedger(tmp_path / "l.json").load())
+    assert seen["url"] == "https://api.anthropic.com/v1/messages"
+    assert seen["headers"]["x-api-key"] == "sk-ant-test"
+    assert seen["headers"]["anthropic-version"]
+    assert "sk-ant-test" not in seen["url"]
+    assert seen["body"]["system"] == analyst.SYSTEM
+    assert seen["body"]["output_config"]["format"]["schema"] == analyst.SCHEMA
+    assert seen["body"]["max_tokens"] == analyst.MAX_TOKENS
 
 
 # --- spend ---
 
 def test_spend_is_reserved_before_the_call(tmp_path, monkeypatch):
     """A timeout that still billed must not leave the cap looking untouched."""
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     path = tmp_path / "l.json"
 
     def boom(*a, **k):
@@ -238,8 +305,35 @@ def test_spend_is_reserved_before_the_call(tmp_path, monkeypatch):
     assert LlmLedger(path).load().spent() > 0
 
 
+def test_provider_token_counts_are_recorded_under_the_ledger_s_own_names(tmp_path, monkeypatch):
+    """Forty-five days of history and the cost report speak prompt/completion.
+    Translating at the boundary is what keeps rows written either side of the
+    provider cutover the same shape."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("LOZ_LLM_USD_PER_MTOK_IN", "5.00")
+    monkeypatch.setenv("LOZ_LLM_USD_PER_MTOK_OUT", "25.00")
+    c, path = cluster(), tmp_path / "l.json"
+    monkeypatch.setattr(analyst.http, "request_json", lambda url, **kw: reply(
+        payload(c.key), usage={"input_tokens": 1_000_000, "output_tokens": 1_000_000}))
+    analyse([c], [], ledger=LlmLedger(path).load())
+    row = [r for r in LlmLedger(path).load().rows if r.get("status") == "succeeded"][-1]
+    assert row["usage"]["prompt_tokens"] == 1_000_000
+    assert row["usage"]["completion_tokens"] == 1_000_000
+    # Settled at what the call measured, not at the reservation.
+    assert row["usd"] == 30.00
+
+
+def test_a_provider_without_token_counts_leaves_the_reservation_standing(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    c, path = cluster(), tmp_path / "l.json"
+    monkeypatch.setattr(analyst.http, "request_json",
+                        lambda url, **kw: reply(payload(c.key), usage={}))
+    analyse([c], [], ledger=LlmLedger(path).load())
+    assert LlmLedger(path).load().spent() == 0.25
+
+
 def test_model_not_found_is_not_charged(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("LOZ_ANALYST_MODELS", "retired-only")
     path = tmp_path / "l.json"
     monkeypatch.setattr(analyst.http, "request_json",

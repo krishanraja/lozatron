@@ -47,7 +47,7 @@ jobs:
           LOZ_OPS_EMAILS: ${{ secrets.LOZ_OPS_EMAILS }}
           LOZ_CC_EMAILS: ${{ secrets.LOZ_CC_EMAILS }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LOZ_ANALYST: ${{ inputs.analyst }}
           LOZ_ANALYST_MODELS: ${{ vars.LOZ_ANALYST_MODELS }}
           LOZ_LLM_DAILY_USD_CAP: ${{ vars.LOZ_LLM_DAILY_USD_CAP }}

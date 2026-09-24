@@ -138,11 +138,19 @@ unknown id, or a field that merely echoes its input. It does not choose what
 ships, how many ship, or in what order: deterministic gates and `rank()` own
 all three.
 
+The provider is the Anthropic Messages API, called over the same stdlib HTTP
+layer as every other dependency here. `ANTHROPIC_API_KEY` authenticates it and
+`LOZ_ANALYST_MODELS` overrides the model chain, which defaults to Claude Opus 5
+falling back to Claude Sonnet 5.
+
 Every failure degrades to the deterministic brief and names its reason in the
 step summary: `auth_failed`, `quota_exhausted`, `model_not_found`,
-`rate_limited`, `schema_rejected`, `render_shape_failed`. A retired model id
-moves to the next entry in `LOZ_ANALYST_MODELS` rather than taking the run down.
-Spend is reserved before the call and capped by `LOZ_LLM_DAILY_USD_CAP`.
+`rate_limited`, `refused`, `truncated_response`, `schema_rejected`,
+`render_shape_failed`. A retired model id moves to the next entry in
+`LOZ_ANALYST_MODELS` rather than taking the run down. Spend is reserved before
+the call and capped by `LOZ_LLM_DAILY_USD_CAP`; token counts come back on the
+response and are recorded under the ledger's own prompt/completion names, so
+runs recorded either side of a provider change stay comparable.
 
 Breaking-news runs are always deterministic. They exist to move fast, and the
 model would add sixteen daily chances for the critical path to fail.
@@ -171,7 +179,7 @@ Optional:
 
 - `NEWSAPI_KEY`
 - `APIFY_TOKEN`
-- `OPENAI_API_KEY`, required only when `LOZ_ANALYST` is not `off`
+- `ANTHROPIC_API_KEY`, required only when `LOZ_ANALYST` is not `off`
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, required only when `LOZ_ARCHIVE=true`
 
 ## Paid sources and cost control
