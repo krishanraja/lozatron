@@ -55,6 +55,24 @@ def test_skips_cleanly_when_no_slot_is_due(tmp_path, monkeypatch):
     assert called["collect"] is False, "a skipped run must not spend time or money collecting"
 
 
+def test_a_closed_window_with_nothing_sent_fails_the_run(tmp_path, monkeypatch):
+    """`not_due` and green was how three days of silence looked like a working
+    system. A window that closed with nothing delivered must fail the job."""
+    monkeypatch.setattr(app, "utcnow", lambda: dt.datetime(2026, 9, 22, 1, 23, tzinfo=UTC))
+    monkeypatch.setattr(app, "collect", fake_collect([]))
+    result = app.run("briefing", tmp_path / "d.json", tmp_path / "s.json",
+                     dry_run=True, slot_gate=True)
+    assert result["skipped"] == "missed"
+    assert result["missed_slot"] == "2026-09-21T09"
+
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr("sys.argv", ["lozatron", "--mode", "briefing", "--dry-run",
+                                     "--state", str(tmp_path / "d.json"),
+                                     "--spend-state", str(tmp_path / "s.json")])
+    assert app.main() == 1
+
+
 def test_delayed_run_still_delivers_its_slot(tmp_path, monkeypatch):
     """A 09:00 ET slot run arriving at 11:05 ET must still go out."""
     monkeypatch.setattr(app, "utcnow", lambda: dt.datetime(2026, 9, 21, 15, 5, tzinfo=UTC))

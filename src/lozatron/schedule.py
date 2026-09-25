@@ -1,8 +1,8 @@
 """Eastern-time delivery slots with a grace window.
 
 GitHub Actions cron is a best-effort queue. Observed scheduled runs on this
-repository arrive 22 minutes to 2.6 hours after their nominal slot, and some
-slots are dropped entirely. An exact-hour local check would therefore skip
+repository arrive 22 minutes to more than seven hours after their nominal
+time, and some are dropped entirely. An exact-hour local check would therefore skip
 delivery on any delayed run and Lauren would get nothing at all.
 
 The gate instead asks a different question: which slot boundary has most
@@ -24,20 +24,22 @@ EASTERN = "America/New_York"
 # GitHub fires the workflow.
 SLOTS_ET: tuple[int, ...] = (9,)
 
-# Wide enough to absorb the observed Actions delay, and far shorter than the
-# 24-hour gap between slots, so a wholly missed slot is never resurrected on
-# top of the next day's.
+# The window is sized to the day, not to the last delay anybody measured.
 #
-# 200 was sized against a 2.6-hour worst case and was not enough. The scheduled
-# runs on 22 and 23 September arrived at 13:24 and 13:31 ET -- about four and a
-# half hours late -- found the 09:00 window closed at 12:20, reported `not_due`
-# and sent nothing. Two days of silence, from a gate whose entire job is to
-# stop exactly that.
+# It was 200 minutes, sized against a 2.6-hour worst case; runs on 22 and 23
+# September arrived 4.5 hours late and sent nothing. It became 360, sized
+# against 4.5 hours; the run on 24 September arrived at 16:14 ET, an hour after
+# that window closed, and sent nothing. Three days of silence from a gate whose
+# whole job is to stop silence, each time because the window chased the last
+# observed delay and GitHub produced a longer one.
 #
-# Six hours closes at 15:00 ET. That is past every delay this repository has
-# observed and still inside the working day, so a brief that arrives late
-# arrives as a late morning brief rather than as an evening one.
-GRACE_MINUTES = 360
+# So the question is no longer "how late can Actions be?" but "until when is
+# this still today's brief?". Twelve hours closes at 21:00 ET. A brief that
+# lands mid-afternoon is late; a day with no brief at all is broken, and the
+# reader cannot tell a quiet day from a failed one. Still far short of the
+# 24-hour gap between slots, so a wholly missed day is never resurrected on
+# top of the next one.
+GRACE_MINUTES = 720
 
 
 def slot_key(moment_et: dt.datetime) -> str:
@@ -98,3 +100,32 @@ def due_slot(
         if key not in delivered_slots:
             return key
     return None
+
+
+def missed_slot(
+    now_utc: dt.datetime,
+    delivered_slots: set[str] | frozenset[str],
+    *,
+    slots: tuple[int, ...] = SLOTS_ET,
+    tz: str = EASTERN,
+    grace_minutes: int = GRACE_MINUTES,
+) -> str | None:
+    """The most recent slot whose window has closed without a delivery.
+
+    `not_due` used to cover two very different states -- "too early, or
+    already sent" and "the window closed and nothing went out" -- and both
+    exited green. The second is the failure, and it read exactly like a
+    working system for three days. This names it, so the run can fail loudly.
+
+    Only the most recent passed boundary is considered: once a newer slot has
+    opened, an older miss is history rather than something to keep alarming on.
+    """
+    now_et = now_utc.astimezone(ZoneInfo(tz))
+    passed = [b for b in slot_boundaries(now_et, slots) if b <= now_et]
+    if not passed:
+        return None
+    latest = passed[-1]
+    if now_et - latest <= dt.timedelta(minutes=grace_minutes):
+        return None
+    key = slot_key(latest)
+    return None if key in delivered_slots else key

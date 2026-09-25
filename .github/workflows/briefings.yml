@@ -4,19 +4,22 @@ on:
   schedule:
     # One brief a day, 9am Eastern -- but the hour here is UTC, always. Actions
     # cron has no timezone: a `timezone:` key beside it is accepted and then
-    # ignored, which is how this workflow spent two days firing outside its own
-    # delivery window. The slot lives in schedule.py, in real Eastern time with
-    # DST; these are only the knocks on the door.
+    # ignored. The slot and its window live in schedule.py, in real Eastern time
+    # with DST; these are only the knocks on the door.
     #
-    # Three of them, because Actions delays scheduled runs by hours and
-    # sometimes drops them entirely. The slot ledger caps delivery at one per
-    # slot, so extra firings cannot produce a second email -- a run whose slot
-    # is already recorded exits in under a second having sent nothing. 13:00 is
-    # 09:00 EDT and 08:00 EST, so in winter the first knock is early and the
-    # later two carry it.
-    - cron: "0 13 * * *"
-    - cron: "0 15 * * *"
-    - cron: "0 17 * * *"
+    # Every hour, from 13:23 to 02:23 UTC. Scheduled runs on this repository
+    # have arrived up to seven hours late, and three knocks a day was not
+    # enough: on 24 September the only one that ran arrived after the window
+    # closed. With a knock every hour, one of them lands inside the window
+    # however late the queue is running. The slot ledger caps delivery at one
+    # per slot, so a knock whose slot is recorded exits in seconds having sent
+    # nothing. Minute 23, not 0: the top of the hour is when every cron on
+    # GitHub fires and when the queue is slowest.
+    #
+    # The evening knocks (00:23-02:23 UTC) run after the window closes. If the
+    # day's brief never went out they fail the run, so a miss arrives as a
+    # GitHub failure email instead of a green tick.
+    - cron: "23 0-2,13-23 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -39,6 +42,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The branch tip at run time, not the commit that was current when
+          # the knock was queued. Knocks queue behind each other; a queued one
+          # pinned to the older commit would read a ledger without the slot the
+          # previous run just recorded, and send the brief a second time.
+          ref: ${{ github.ref_name }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"

@@ -109,23 +109,38 @@ whatever else is misconfigured.
 ## Delivery slots
 
 GitHub's scheduler is best-effort: observed runs on this repository arrive
-between 22 minutes and four and a half hours after their nominal time, and some
-slots are dropped outright. Scheduled briefings therefore do not ask "what hour
-is it?" — they ask which Eastern slot is still outstanding, within a 360-minute
-grace window, and deliver that. A delayed run still delivers. A slot already
-recorded in `state/delivered.json` cannot fire twice. A slot missed beyond grace
-stays missed rather than arriving in the evening dressed as the morning brief.
+between 22 minutes and more than seven hours after their nominal time, and some
+are dropped outright. Scheduled briefings therefore do not ask "what hour is
+it?" — they ask which Eastern slot is still outstanding and deliver that. A
+delayed run still delivers. A slot already recorded in `state/delivered.json`
+cannot fire twice.
 
-The window is the half of this that lives in code, in real Eastern time with
-DST. The other half is the workflow's cron hours, which are **always UTC** —
-Actions cron accepts a `timezone:` key and then ignores it. That mismatch cost
-two days of delivery in September 2026: the runs arrived at 13:30 ET, the
-09:00 window had closed at 12:20, and both reported `not_due` and sent nothing.
-So the workflow now knocks three times, at 13:00, 15:00 and 17:00 UTC, and the
-slot ledger caps the result at one email; a run whose slot is already recorded
-exits in under a second. `tests/test_schedule.py` checks the workflow's own
-cron hours against the window in both EDT and EST, because the two halves are
-edited months apart and a cron outside its window fails silently.
+The window runs from 09:00 to 21:00 ET: it is sized to "is this still today's
+brief?", not to the last delay anyone measured. It used to be sized to the
+delay, and that failed three days running in September 2026 — 200 minutes
+closed before the runs of 22 and 23 September arrived, and 360 closed an hour
+before the run of 24 September did. Each time the run reported `not_due`, went
+green and sent nothing. A brief that arrives mid-afternoon is late; a day with
+no brief is broken.
+
+The workflow knocks every hour at minute 23, from 13:23 to 02:23 UTC. Cron
+hours are **always UTC** — Actions accepts a `timezone:` key and ignores it —
+and minute 0 is avoided because it is when every cron on GitHub fires and the
+queue is slowest. With a dozen knocks, one lands in the window however late the
+queue runs; the slot ledger caps the result at one email, and a knock whose
+slot is recorded exits in seconds. Each run checks out the branch tip rather
+than the commit current when it was queued, so a knock queued behind a sending
+run reads the slot that run just recorded.
+
+**A miss fails loudly.** When a scheduled run finds the most recent slot's
+window closed with nothing delivered, it reports `missed` and fails the job,
+so GitHub's failure email says so instead of a green tick. The evening knocks
+exist for exactly this. Recovery is a manual dispatch with `dry_run` off.
+
+`tests/test_schedule.py` reads the workflow's own crons and checks, in both EDT
+and EST, that several open the window and at least one runs after it closes,
+because the two halves are edited months apart and a cron outside its window
+fails silently.
 
 `workflow_dispatch` always bypasses the gate, so a human can force a delivery.
 `LOZ_BRIEF_SLOTS_ET` overrides the default, which is `9`.

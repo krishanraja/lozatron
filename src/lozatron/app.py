@@ -97,10 +97,16 @@ def run(
             slots=schedule.parse_slots(env_text("LOZ_BRIEF_SLOTS_ET")),
         )
         if slot is None:
+            missed = schedule.missed_slot(
+                now,
+                state.delivered_slots(),
+                slots=schedule.parse_slots(env_text("LOZ_BRIEF_SLOTS_ET")),
+            )
             return {
                 "mode": mode,
                 "dry_run": dry_run,
-                "skipped": "not_due",
+                "skipped": "missed" if missed else "not_due",
+                "missed_slot": missed,
                 "sent": False,
                 "stories_selected": 0,
                 "sources_seen": 0,
@@ -543,7 +549,9 @@ def main() -> int:
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as handle:
             lines = [f"## Lozatron {args.mode}", ""]
-            if result.get("skipped"):
+            if result.get("skipped") == "missed":
+                lines.append(f"- MISSED: slot {result['missed_slot']} closed with nothing delivered")
+            elif result.get("skipped"):
                 lines.append(f"- Skipped: {result['skipped']} (no Eastern slot outstanding)")
             else:
                 lines += [
@@ -556,6 +564,12 @@ def main() -> int:
                     f"- Source errors: {len(result['source_errors'])}",
                 ]
             handle.write("\n".join(lines) + "\n")
+    if result.get("skipped") == "missed":
+        # A green run that sent nothing is how three days of silence went
+        # unnoticed. Fail, so GitHub's own failure email says so.
+        print(f"::error title=BRIEF MISSED::Slot {result['missed_slot']} closed "
+              "with nothing delivered. Dispatch the workflow with dry_run=false to send it.")
+        return 1
     return 0
 
 
