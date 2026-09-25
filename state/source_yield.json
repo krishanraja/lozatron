@@ -1,0 +1,271 @@
+{
+  "days": {
+    "2026-09-25": {
+      "ABC News (AU)": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "AdExchanger": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Adweek": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 14,
+        "items": 14
+      },
+      "Antaranews.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Bakerdonelson.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Bitcoinfoundation.org": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Blog.google": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "BroBible": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Buffer.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Business Insider": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "CMSWire": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Coolcatteacher.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Deadline": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 14,
+        "items": 14
+      },
+      "Dezeen": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Digiday": {
+        "delivered": 2,
+        "eligible": 3,
+        "fresh": 12,
+        "items": 16
+      },
+      "Ecpa.org": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Financial Post": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Gizmodo.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Glossy": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 6,
+        "items": 20
+      },
+      "Hollywood Reporter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "Hootsuite.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Influencer Marketing Hub": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 9
+      },
+      "Kajabi": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "Kotaku": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Livedoor.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Music Ally": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Nathanbarry.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "NetInfluencer": {
+        "delivered": 2,
+        "eligible": 6,
+        "fresh": 10,
+        "items": 10
+      },
+      "PRNewswire": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 5,
+        "items": 5
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 10
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 40
+      },
+      "Salon": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Social Media Today": {
+        "delivered": 1,
+        "eligible": 2,
+        "fresh": 10,
+        "items": 10
+      },
+      "Socialmediaexaminer.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 4,
+        "items": 10
+      },
+      "Stanford.edu": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 20,
+        "items": 20
+      },
+      "TechRadar": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "The Verge": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "TheWrap": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 4,
+        "items": 4
+      },
+      "Thefutoncritic.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Tubefilter": {
+        "delivered": 2,
+        "eligible": 4,
+        "fresh": 7,
+        "items": 12
+      },
+      "Variety": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "YouTube Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 20
+      }
+    }
+  },
+  "version": 1
+}
