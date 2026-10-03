@@ -163,3 +163,16 @@ def test_parse_slots_falls_back_to_default_on_junk():
     assert parse_slots("18,9") == (9, 18)
     assert parse_slots("") == (9,)
     assert parse_slots("banana,99") == (9,)
+
+
+def test_the_clock_obeys_the_kill_switch_and_a_person_does_not():
+    """A dispatch from the VPS clock must stop when LOZATRON_ENABLED is off,
+    exactly as a scheduled run does. Only a person's dispatch overrides it."""
+    from pathlib import Path
+
+    text = Path(__file__).resolve().parents[1].joinpath(
+        ".github/workflows/briefings.yml").read_text(encoding="utf-8")
+    assert ("if: vars.LOZATRON_ENABLED == 'true' || "
+            "(github.event_name == 'workflow_dispatch' && inputs.trigger != 'clock')") in text
+    assert "LOZ_TRIGGER: ${{ inputs.trigger || github.event_name }}" in text
+    assert "- clock" in text and "default: manual" in text

@@ -536,10 +536,16 @@ def main() -> int:
         return 0
 
     # Scheduled briefings go through the slot gate; a manual dispatch always
-    # runs, so a human can force a delivery without fighting the ledger.
+    # runs, so a human can force a delivery without fighting the ledger. The
+    # VPS clock dispatches with LOZ_TRIGGER=clock: it stands in for the
+    # schedule, so it is gated exactly like one, and a clock run and a late
+    # hourly knock can never both send the same slot.
     slot_gate = (
         args.mode == "briefing"
-        and os.environ.get("GITHUB_EVENT_NAME") == "schedule"
+        and (
+            os.environ.get("GITHUB_EVENT_NAME") == "schedule"
+            or os.environ.get("LOZ_TRIGGER") == "clock"
+        )
         and not args.no_slot_gate
     )
     result = run(args.mode, args.state, args.spend_state, args.dry_run, slot_gate=slot_gate)
