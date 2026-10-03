@@ -223,3 +223,36 @@ def test_the_daily_ceiling_suppresses_a_send_beyond_the_cap(tmp_path, monkeypatc
     result = app.run("briefing", path, tmp_path / "s.json", dry_run=False)
     assert result["ceiling_hit"] is True
     assert result["sent"] is False
+
+
+def _gate_seen_by_main(monkeypatch, tmp_path, event, trigger):
+    seen = {}
+
+    def spy(mode, state, spend_state, dry_run, slot_gate=False):
+        seen["slot_gate"] = slot_gate
+        return {}
+
+    monkeypatch.setattr(app, "run", spy)
+    monkeypatch.setenv("GITHUB_EVENT_NAME", event)
+    if trigger is None:
+        monkeypatch.delenv("LOZ_TRIGGER", raising=False)
+    else:
+        monkeypatch.setenv("LOZ_TRIGGER", trigger)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr("sys.argv", ["lozatron", "--mode", "briefing", "--dry-run",
+                                     "--state", str(tmp_path / "d.json"),
+                                     "--spend-state", str(tmp_path / "s.json")])
+    assert app.main() == 0
+    return seen["slot_gate"]
+
+
+def test_a_clock_dispatch_is_gated_like_a_scheduled_run(tmp_path, monkeypatch):
+    """The VPS clock stands in for the schedule. If it skipped the slot gate,
+    a clock run and a late hourly knock could both send the same brief."""
+    assert _gate_seen_by_main(monkeypatch, tmp_path, "schedule", None) is True
+    assert _gate_seen_by_main(monkeypatch, tmp_path, "workflow_dispatch", "clock") is True
+
+
+def test_a_person_dispatching_still_bypasses_the_gate(tmp_path, monkeypatch):
+    assert _gate_seen_by_main(monkeypatch, tmp_path, "workflow_dispatch", "manual") is False
+    assert _gate_seen_by_main(monkeypatch, tmp_path, "workflow_dispatch", None) is False

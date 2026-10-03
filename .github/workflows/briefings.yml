@@ -19,6 +19,11 @@ on:
     # The evening knocks (00:23-02:23 UTC) run after the window closes. If the
     # day's brief never went out they fail the run, so a miss arrives as a
     # GitHub failure email instead of a green tick.
+    #
+    # The punctual trigger is the VPS clock (krishanraja/ai-harness,
+    # scripts/vps/clock.py): it dispatches this workflow at 09:00 Eastern with
+    # trigger=clock, which starts in seconds rather than hours. These knocks
+    # stay as the backup, and the slot ledger keeps it to one email a day.
     - cron: "23 0-2,13-23 * * *"
   workflow_dispatch:
     inputs:
@@ -27,6 +32,19 @@ on:
         required: true
         default: true
         type: boolean
+      trigger:
+        # Who pressed the button. A person is `manual`: the run ignores the
+        # LOZATRON_ENABLED switch and the slot ledger, so a human can always
+        # force a delivery. The VPS clock is `clock`: it stands in for the
+        # schedule, which GitHub starts hours late or drops, so it obeys
+        # exactly what a scheduled run obeys -- the switch and the ledger.
+        description: manual (a person) or clock (the VPS clock, obeys the switch and the slot ledger)
+        required: false
+        default: manual
+        type: choice
+        options:
+          - manual
+          - clock
 
 permissions:
   contents: write
@@ -37,7 +55,7 @@ concurrency:
 
 jobs:
   briefing:
-    if: vars.LOZATRON_ENABLED == 'true' || github.event_name == 'workflow_dispatch'
+    if: vars.LOZATRON_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.trigger != 'clock')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -73,6 +91,10 @@ jobs:
           # in gmail.py. Without it the run would fail rather than send, which
           # is the right failure but a needless one.
           LOZ_OPS_EMAILS: ${{ secrets.LOZ_OPS_EMAILS }}
+          # `clock` puts a dispatched run through the slot gate, like a
+          # scheduled one, so the clock and the hourly knocks can never both
+          # send the same morning's brief.
+          LOZ_TRIGGER: ${{ inputs.trigger || github.event_name }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           # The X scraper supplies the commentary layer -- what is being said

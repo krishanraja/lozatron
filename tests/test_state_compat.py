@@ -16,8 +16,28 @@ UTC = dt.timezone.utc
 LIVE = Path(__file__).resolve().parent.parent / "state" / "delivered.json"
 
 
-def test_live_ledger_is_version_one_or_two():
-    assert json.loads(LIVE.read_text())["version"] in (1, 2)
+def test_live_ledger_is_a_version_this_code_can_read():
+    """Any version from 1 up to the code's own schema, never a hard-coded list.
+
+    This test used to read `in (1, 2)`. Version 3 shipped on 22 September and
+    the first send after it, on 25 September, wrote a version 3 ledger. From
+    the next run on, this assertion failed in the workflow's Test step, before
+    the brief could run, and 33 runs over eight days sent nothing. Pinning the
+    live file to literal versions turned a compatible upgrade into an outage.
+    """
+    version = json.loads(LIVE.read_text())["version"]
+    assert isinstance(version, int)
+    assert 1 <= version <= DeliveryState.SCHEMA_VERSION
+
+
+def test_a_ledger_saved_by_this_code_passes_the_live_version_check(tmp_path):
+    """The guard above must accept what `save()` writes, so a schema bump can
+    never again fail the very next run."""
+    path = tmp_path / "delivered.json"
+    DeliveryState(path).load().save()
+    version = json.loads(path.read_text())["version"]
+    assert version == DeliveryState.SCHEMA_VERSION
+    assert 1 <= version <= DeliveryState.SCHEMA_VERSION
 
 
 def test_every_live_fingerprint_still_suppresses():

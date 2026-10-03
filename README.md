@@ -142,8 +142,24 @@ and EST, that several open the window and at least one runs after it closes,
 because the two halves are edited months apart and a cron outside its window
 fails silently.
 
-`workflow_dispatch` always bypasses the gate, so a human can force a delivery.
-`LOZ_BRIEF_SLOTS_ET` overrides the default, which is `9`.
+**The punctual trigger is outside GitHub.** Even hourly knocks are a bet on
+GitHub's queue: in the eight days to 3 October it started about four of the
+fourteen a day. The VPS clock (`krishanraja/ai-harness`, `scripts/vps/clock.py`)
+dispatches this workflow at 09:00 ET with `trigger=clock`, and a dispatched run
+starts in seconds. A clock run obeys `LOZATRON_ENABLED` and the slot gate
+exactly as a scheduled run does, so the clock and a late knock can never both
+send; the knocks stay as the backup.
+
+A person's `workflow_dispatch` (`trigger=manual`, the default) always bypasses
+the gate, so a human can force a delivery. `LOZ_BRIEF_SLOTS_ET` overrides the
+default, which is `9`.
+
+**The ledger check tracks the code.** `tests/test_state_compat.py` runs against
+the live `state/delivered.json` before every brief, and it used to accept only
+versions 1 and 2. The first send after version 3 shipped wrote a version 3
+ledger, and from then on the Test step failed every run: nothing went out from
+25 September to 3 October. It now accepts any version from 1 up to
+`DeliveryState.SCHEMA_VERSION`.
 
 Each edition carries a deterministic `Message-ID`. The Gmail send is the one
 call that is never retried on a timeout or server error, because either may
