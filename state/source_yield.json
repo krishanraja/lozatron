@@ -265,6 +265,212 @@
         "fresh": 0,
         "items": 20
       }
+    },
+    "2026-10-04": {
+      "AdExchanger": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 2,
+        "items": 2
+      },
+      "Adweek": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 7,
+        "items": 10
+      },
+      "Anime News Network": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Billboard": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Biztoc.com": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 2,
+        "items": 2
+      },
+      "Bossip": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Business Insider": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 4,
+        "items": 4
+      },
+      "CNBC": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "Dazed": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Deadline": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 13,
+        "items": 13
+      },
+      "Digiday": {
+        "delivered": 1,
+        "eligible": 6,
+        "fresh": 9,
+        "items": 18
+      },
+      "Glossy": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 20
+      },
+      "Hollywood Reporter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "Influencer Marketing Hub": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 9
+      },
+      "Kajabi": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "Moneycompass.com.my": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "NetInfluencer": {
+        "delivered": 2,
+        "eligible": 8,
+        "fresh": 10,
+        "items": 10
+      },
+      "New York Magazine": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 10
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 40
+      },
+      "SiliconANGLE News": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Slate Magazine": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Social Media Today": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 10
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 10
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 20,
+        "items": 20
+      },
+      "The Verge": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "TheWrap": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 1
+      },
+      "Themusicninja.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Tubefilter": {
+        "delivered": 2,
+        "eligible": 3,
+        "fresh": 6,
+        "items": 14
+      },
+      "Us Weekly": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "Variety": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "Vulture": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Yanko Design": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "YouTube Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 20
+      }
     }
   },
   "version": 1
