@@ -277,7 +277,7 @@
         "delivered": 0,
         "eligible": 0,
         "fresh": 7,
-        "items": 10
+        "items": 20
       },
       "Anime News Network": {
         "delivered": 0,
@@ -300,14 +300,14 @@
       "Bossip": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 1,
-        "items": 1
+        "fresh": 2,
+        "items": 2
       },
       "Business Insider": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 4,
-        "items": 4
+        "fresh": 5,
+        "items": 5
       },
       "CNBC": {
         "delivered": 0,
@@ -324,38 +324,38 @@
       "Deadline": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 13,
-        "items": 13
+        "fresh": 25,
+        "items": 25
       },
       "Digiday": {
         "delivered": 1,
         "eligible": 6,
         "fresh": 9,
-        "items": 18
+        "items": 33
       },
       "Glossy": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 3,
-        "items": 20
+        "fresh": 4,
+        "items": 40
       },
       "Hollywood Reporter": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 10,
-        "items": 10
+        "fresh": 20,
+        "items": 20
       },
       "Influencer Marketing Hub": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 0,
-        "items": 9
+        "items": 18
       },
       "Kajabi": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 0,
-        "items": 40
+        "items": 80
       },
       "Moneycompass.com.my": {
         "delivered": 0,
@@ -363,13 +363,25 @@
         "fresh": 2,
         "items": 2
       },
+      "National Post": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
       "NetInfluencer": {
         "delivered": 2,
         "eligible": 8,
         "fresh": 10,
-        "items": 10
+        "items": 20
       },
       "New York Magazine": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "PCMag.com": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 1,
@@ -378,14 +390,26 @@
       "Passionfruit": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 10
+        "fresh": 3,
+        "items": 20
       },
       "Podnews": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 1,
-        "items": 40
+        "items": 80
+      },
+      "Saastr.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Sideshift.app": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
       },
       "SiliconANGLE News": {
         "delivered": 0,
@@ -396,38 +420,38 @@
       "Slate Magazine": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 1,
-        "items": 1
+        "fresh": 2,
+        "items": 2
       },
       "Social Media Today": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 0,
-        "items": 10
+        "items": 20
       },
       "Spotify Newsroom": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 1,
-        "items": 10
+        "items": 20
       },
       "TechCrunch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 35,
+        "items": 40
+      },
+      "The Verge": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 20,
         "items": 20
       },
-      "The Verge": {
-        "delivered": 0,
-        "eligible": 0,
-        "fresh": 10,
-        "items": 10
-      },
       "TheWrap": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 0,
-        "items": 1
+        "items": 2
       },
       "Themusicninja.com": {
         "delivered": 0,
@@ -435,29 +459,35 @@
         "fresh": 2,
         "items": 2
       },
-      "Tubefilter": {
-        "delivered": 2,
-        "eligible": 3,
-        "fresh": 6,
-        "items": 14
-      },
-      "Us Weekly": {
+      "Thephoblographer.com": {
         "delivered": 1,
         "eligible": 1,
         "fresh": 1,
         "items": 1
       },
+      "Tubefilter": {
+        "delivered": 2,
+        "eligible": 3,
+        "fresh": 8,
+        "items": 27
+      },
+      "Us Weekly": {
+        "delivered": 1,
+        "eligible": 2,
+        "fresh": 2,
+        "items": 2
+      },
       "Variety": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 10,
-        "items": 10
+        "fresh": 20,
+        "items": 20
       },
       "Vulture": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 4,
+        "items": 4
       },
       "Yanko Design": {
         "delivered": 0,
@@ -469,7 +499,7 @@
         "delivered": 0,
         "eligible": 0,
         "fresh": 0,
-        "items": 20
+        "items": 40
       }
     }
   },
