@@ -501,6 +501,164 @@
         "fresh": 0,
         "items": 40
       }
+    },
+    "2026-10-05": {
+      "Adweek": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 10
+      },
+      "Bleeding Cool News": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Business Insider": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Deadline": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 12,
+        "items": 12
+      },
+      "Digiday": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 5,
+        "items": 15
+      },
+      "Glossy": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 4,
+        "items": 20
+      },
+      "Graphicdesignjunction.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Hollywood Reporter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "IGN": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Influencer Marketing Hub": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 9
+      },
+      "Kajabi": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "Lifesciencesworld.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "NetInfluencer": {
+        "delivered": 2,
+        "eligible": 4,
+        "fresh": 7,
+        "items": 10
+      },
+      "PCMag.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 3,
+        "items": 10
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 40
+      },
+      "RTE": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Sideshift.app": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Social Media Today": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 6,
+        "items": 10
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 10
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 12,
+        "items": 20
+      },
+      "The Verge": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "Thephoblographer.com": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "Tubefilter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 12
+      },
+      "Variety": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 10,
+        "items": 10
+      },
+      "YouTube Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 20
+      }
     }
   },
   "version": 1
