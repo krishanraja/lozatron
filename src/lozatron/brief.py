@@ -27,6 +27,9 @@ class Entry:
     corroboration: int
     age_hours: int
     summary: str
+    # Identifies this story to the feedback endpoint, so a signal can be tied
+    # back to the event rather than just the edition.
+    cluster_key: str = ""
     # priority (0-8h) | secondary (8-24h) | fallback (24-48h). Lauren's rule
     # asks for the oldest tier to be labelled rather than silently mixed in.
     freshness: str = ""
@@ -54,6 +57,9 @@ class Brief:
     slot: str | None
     generated_at: dt.datetime
     entries: list[Entry]
+    # The edition the feedback buttons report against. The endpoint accepts
+    # only well-formed, recent edition ids, so this is also what bounds it.
+    edition_id: str = ""
     lede: str = ""
     degraded: str = ""
     filtered: dict[str, int] = dataclasses.field(default_factory=dict)
@@ -99,6 +105,7 @@ def compose(
     now: dt.datetime,
     degraded: str = "",
     filtered: dict[str, int] | None = None,
+    edition_id: str = "",
     mechanics: list[Any] | None = None,
     commentary: dict[str, list[Any]] | None = None,
     patterns: list[Any] | None = None,
@@ -118,6 +125,7 @@ def compose(
             age_hours=cluster.age_hours,
             freshness=cluster.freshness,
             summary=cluster.leader.summary,
+            cluster_key=getattr(cluster, "key", "") or "",
         )
 
     entries: list[Entry] = []
@@ -156,6 +164,7 @@ def compose(
         lede=analysis.lede if analysis else "",
         degraded=degraded,
         filtered=filtered or {},
+        edition_id=edition_id,
         mechanics=mech_entries,
         commentary={key: len(posts) for key, posts in (commentary or {}).items()},
         patterns=[str(item) for item in (patterns or [])],

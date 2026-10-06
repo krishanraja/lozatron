@@ -20,7 +20,9 @@ from html.parser import HTMLParser
 from zoneinfo import ZoneInfo
 
 from .brief import Brief, Entry
-from .core import clean_feed_text
+import urllib.parse
+
+from .core import clean_feed_text, env_text
 
 EASTERN = ZoneInfo("America/New_York")
 
@@ -32,6 +34,12 @@ ANSWER = "#1f6f5c"     # why it matters: the thing she is reading for
 LINK = "#1b5e8c"       # only ever used for something you can click
 FLAG = "#8a5a12"       # needs a decision, or low confidence
 SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
+
+# Where the feedback buttons point. Lauren asked on 5 October to be able to
+# push the system herself rather than going through Krish, so every story
+# carries two one-tap verdicts and the edition carries a request box. The
+# button lands with her choice already selected: one tap, optional note, send.
+SIGNAL_URL = "https://gojpffsrxybbpbdzzrvs.supabase.co/functions/v1/loz-signal"
 MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace"
 
 ALLOWED_TAGS = frozenset({
@@ -158,7 +166,15 @@ def render_text(brief: Brief) -> str:
                 lines.append("   [low confidence]")
         else:
             lines.append(f"   {clean_feed_text(entry.summary, 400)}")
-        lines += [f"   {entry.url}", ""]
+        lines.append(f"   {entry.url}")
+        if brief.edition_id:
+            lines.append(f"   More like this: {_signal_url(brief, 'more', entry)}")
+            lines.append(f"   Not for me:     {_signal_url(brief, 'less', entry)}")
+        lines.append("")
+    if brief.edition_id:
+        lines += ["TELL LOZATRON WHAT TO CHASE",
+                  f"  {_signal_url(brief, 'ask')}",
+                  "  Goes straight to the system. Nobody reads it first.", ""]
     if brief.patterns:
         lines += ["BEING DISCUSSED (unconfirmed)", ""]
         lines += [f"  {line}" for line in brief.patterns]
@@ -217,7 +233,57 @@ def _mechanic(entry: Entry) -> str:
     )
 
 
-def _story(entry: Entry, index: int) -> str:
+def _signal_url(brief: Brief, action: str, entry: Entry | None = None) -> str:
+    """A feedback link. Query only, no secrets, nothing a stray click can harm.
+
+    The endpoint accepts four known actions and only a well-formed, recent
+    edition id, and writes to one table nothing acts on automatically.
+    """
+    base = env_text("LOZ_SIGNAL_URL", SIGNAL_URL)
+    params = {"e": brief.edition_id, "a": action}
+    if entry is not None:
+        params["c"] = entry.cluster_key
+        params["t"] = entry.title[:160]
+        params["o"] = (entry.outlets[0] if entry.outlets else "")[:40]
+    return f"{base}?{urllib.parse.urlencode(params)}"
+
+
+def _verdicts(brief: Brief, entry: Entry) -> str:
+    """Her verdict sits where she just finished reading, not in a footer."""
+    if not brief.edition_id:
+        return ""
+    more = _signal_url(brief, "more", entry)
+    less = _signal_url(brief, "less", entry)
+    return (
+        f'<p style="margin:10px 0 0;font-family:{MONO};font-size:13px;line-height:1.5;'
+        f'color:{MUTED};">'
+        f'<a href="{_t(more, 900)}" style="color:{MUTED};text-decoration:underline;'
+        f'text-underline-offset:3px;">More like this</a>'
+        f'&nbsp;&nbsp;&middot;&nbsp;&nbsp;'
+        f'<a href="{_t(less, 900)}" style="color:{MUTED};text-decoration:underline;'
+        f'text-underline-offset:3px;">Not for me</a></p>'
+    )
+
+
+def _ask_block(brief: Brief) -> str:
+    """The request half. She said she wanted to push it for stories."""
+    if not brief.edition_id:
+        return ""
+    href = _signal_url(brief, "ask")
+    return (
+        f'<tr><td style="padding:10px 0 30px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+        f'<tbody><tr><td style="padding:18px 20px;background:#f3efe7;border-radius:4px;">'
+        f'<p style="margin:0 0 6px;font-size:16px;line-height:1.45;color:{INK};font-weight:600;">'
+        f'<a href="{_t(href, 900)}" style="color:{LINK};text-decoration:underline;'
+        f'text-underline-offset:3px;">Tell Lozatron what to chase &rarr;</a></p>'
+        f'<p style="margin:0;font-size:14px;line-height:1.5;color:{MUTED};">'
+        f'Goes straight to the system. Nobody reads it first.</p>'
+        f'</td></tr></tbody></table></td></tr>'
+    )
+
+
+def _story(entry: Entry, index: int, brief: Brief | None = None) -> str:
     # The corroboration count only earns its place once the outlet line has
     # collapsed into "and N more"; naming two outlets and then saying "2
     # outlets" is the same fact twice, and it costs a wrapped line on a phone.
@@ -273,6 +339,7 @@ def _story(entry: Entry, index: int) -> str:
         f'<a href="{_t(entry.url, 900)}" style="color:{LINK};text-decoration:underline;'
         f'text-underline-offset:3px;font-weight:600;">Read on {_t(entry.outlets[0] if entry.outlets else "source", 40)}'
         f' &rarr;</a></p>'
+        + (_verdicts(brief, entry) if brief is not None else "") +
         f'</td></tr></tbody></table></td></tr>'
     )
 
@@ -315,7 +382,9 @@ def render_html(brief: Brief) -> str:
         )
 
     for index, entry in enumerate(brief.entries, 1):
-        rows.append(_story(entry, index))
+        rows.append(_story(entry, index, brief))
+
+    rows.append(_ask_block(brief))
 
     if brief.patterns:
         # Aggregate only. A post is one person's opinion and is not reporting,

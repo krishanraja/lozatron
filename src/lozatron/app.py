@@ -231,7 +231,7 @@ def run(
         document = compose(
             clusters, analysis, mode=mode, slot=slot, now=now,
             degraded="" if analysis_reason in ("ok", "partial_analysis") else analysis_reason,
-            filtered=filtered,
+            filtered=filtered, edition_id=edition,
             mechanics=mechanics, commentary=commentary, patterns=patterns,
         )
         try:
@@ -440,6 +440,7 @@ def preview(mode: str, state_path: Path) -> dict[str, object]:
         clusters, analysis, mode=mode, slot=None, now=now,
         degraded="" if reason in ("ok", "partial_analysis", "off") else reason,
         filtered=filtered,
+        edition_id=edition_id(mode, None, now),
         mechanics=mechanics,
     )
     subject, text_body, html_body = render_mod.render(document)
