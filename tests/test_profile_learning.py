@@ -270,3 +270,48 @@ def test_unreachable_supabase_changes_nothing(tmp_path, monkeypatch):
     assert result["read_error"] == "RuntimeError"
     assert result["wrote_profile"] is False
     assert not path.exists()
+
+
+# -- misconfiguration must not look like a quiet week --------------------
+
+def test_missing_credentials_fails_loudly(tmp_path, monkeypatch):
+    """The failure this nearly shipped with.
+
+    No workflow in this repo had ever passed SUPABASE_*, so the first
+    learn.yml run reported success having read nothing, and would have gone on
+    doing that indefinitely. Credentials absent is a misconfiguration and must
+    be distinguishable from a week with no taps.
+    """
+    from lozatron import app, store
+
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    result = app.learn(tmp_path / "profile.json", days=30)
+    assert result["missing_credentials"] is True
+    assert result["wrote_profile"] is False
+
+
+def test_the_cli_exits_non_zero_without_credentials(tmp_path, monkeypatch):
+    """A red tick is the only signal that the loop is not wired up.
+
+    Safe to fail: this workflow sends no email and gates no brief.
+    """
+    from lozatron import app
+
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr("sys.argv", [
+        "lozatron", "--learn", "--profile", str(tmp_path / "profile.json")])
+    assert app.main() == 1
+
+
+def test_a_quiet_week_still_exits_zero(tmp_path, monkeypatch):
+    """Credentials present, nobody tapped. That is success, not a failure."""
+    from lozatron import app, store
+
+    monkeypatch.setattr(store, "signals", lambda days=30: [])
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr("sys.argv", [
+        "lozatron", "--learn", "--profile", str(tmp_path / "profile.json")])
+    assert app.main() == 0

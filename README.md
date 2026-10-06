@@ -173,6 +173,14 @@ loop cannot drift far or invisibly:
 learning failure can never produce a missing or broken brief. On an
 unreachable Supabase it reports `read_error` and leaves the profile alone.
 
+**It needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as repository
+secrets.** No other workflow passes them, so if they are absent the loop can
+read nothing. Rather than report success and appear to work for weeks while
+learning nothing, a missing credential fails the run with a named error. That
+is safe to fail loudly: this workflow sends no email and gates no brief. A red
+tick on `learn.yml` is the only thing that tells you the loop is not wired up;
+a green one with `signals_read: 0` just means nobody tapped.
+
 ## The kill switch
 
 `READER_DELIVERY_ENABLED` in `src/lozatron/gmail.py` decides whether the brief

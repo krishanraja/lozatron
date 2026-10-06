@@ -443,8 +443,16 @@ def learn(profile_path: Path, *, days: int = 30) -> dict[str, object]:
     # reason is reported so a run that quietly learned nothing is still
     # distinguishable from a quiet week.
     read_error = ""
+    missing_credentials = False
     try:
         signals = store.signals(days=days)
+    except store.MissingCredentials as exc:
+        # Distinct from a transient failure, and deliberately loud. Without
+        # credentials the loop reads nothing and looks exactly like a quiet
+        # week, so it would appear to work for weeks while learning nothing.
+        signals = []
+        missing_credentials = True
+        read_error = str(exc)
     except Exception as exc:  # noqa: BLE001
         signals = []
         read_error = f"{type(exc).__name__}"
@@ -459,6 +467,7 @@ def learn(profile_path: Path, *, days: int = 30) -> dict[str, object]:
         "wrote_profile": changed,
         "weights_now": len(learned.weights),
         "read_error": read_error,
+        "missing_credentials": missing_credentials,
         **report,
     }
 
@@ -624,6 +633,17 @@ def main() -> int:
         if summary_path:
             with open(summary_path, "a", encoding="utf-8") as handle:
                 handle.write(f"## Lozatron learning\n\n```json\n{output}\n```\n")
+        if result.get("missing_credentials"):
+            # Fail the run. This workflow sends no email and gates no brief,
+            # so a red tick here costs nothing and is the only thing that
+            # distinguishes "not wired up" from "a quiet week".
+            print(
+                "::error title=Learning loop has no credentials::"
+                "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not set, so "
+                "Lauren's feedback cannot be read and the profile will never "
+                "change. Add them as repository secrets."
+            )
+            return 1
         return 0
 
     # Scheduled briefings go through the slot gate; a manual dispatch always

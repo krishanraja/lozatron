@@ -26,6 +26,19 @@ from .brief import Brief
 SCHEMA = "lozatron"
 
 
+class MissingCredentials(RuntimeError):
+    """No Supabase credentials in the environment.
+
+    Its own type because the learning loop must tell two situations apart. A
+    quiet week with no taps is normal and silent. Credentials that were never
+    wired is a misconfiguration that would otherwise look identical -- the
+    loop reads nothing, reports success, and appears to work for weeks while
+    learning nothing at all. The first version of learn.yml did exactly that,
+    because no workflow in this repo had ever passed SUPABASE_*. So this
+    raises, and `app.learn` turns it into a failed run.
+    """
+
+
 def configured() -> bool:
     from .core import env_flag, env_text
     return bool(env_text("SUPABASE_URL") and env_text("SUPABASE_SERVICE_ROLE_KEY")
@@ -142,7 +155,10 @@ def signals(days: int = 30) -> list[dict[str, Any]]:
     key = env_text("SUPABASE_SERVICE_ROLE_KEY")
     base = env_text("SUPABASE_URL").rstrip("/")
     if not (key and base):
-        return []
+        raise MissingCredentials(
+            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to read "
+            "Lauren's feedback"
+        )
     try:
         rows = http.request_json(
             f"{base}/rest/v1/rpc/loz_recent_signals",
