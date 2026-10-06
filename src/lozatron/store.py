@@ -152,12 +152,22 @@ def signals(days: int = 30) -> list[dict[str, Any]]:
     # requires LOZ_ARCHIVE, which gates whether briefs are archived -- a
     # separate decision from whether Lauren's feedback is read. Reusing it here
     # made the loop silently read nothing, which is how this was found.
-    key = env_text("SUPABASE_SERVICE_ROLE_KEY")
+    # Prefer the scoped reader token, and fall back to the service key only so
+    # a local run with the existing environment still works.
+    #
+    # CI must use the scoped one. LOZ_SIGNAL_READ_KEY carries role
+    # `lozatron_reader`, which can execute `loz_recent_signals` and read no
+    # table at all -- verified against lozatron.signals and
+    # public.contact_intelligence, both denied. The service key bypasses RLS on
+    # every table in this project, and this loop runs in a public repository's
+    # Actions, so that key has no business being the standing credential for
+    # one read-only function. See scripts/mint_reader_token.py.
+    key = env_text("LOZ_SIGNAL_READ_KEY") or env_text("SUPABASE_SERVICE_ROLE_KEY")
     base = env_text("SUPABASE_URL").rstrip("/")
     if not (key and base):
         raise MissingCredentials(
-            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to read "
-            "Lauren's feedback"
+            "SUPABASE_URL and LOZ_SIGNAL_READ_KEY (or SUPABASE_SERVICE_ROLE_KEY "
+            "for a local run) are required to read Lauren's feedback"
         )
     try:
         rows = http.request_json(

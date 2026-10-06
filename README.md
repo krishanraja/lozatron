@@ -173,13 +173,39 @@ loop cannot drift far or invisibly:
 learning failure can never produce a missing or broken brief. On an
 unreachable Supabase it reports `read_error` and leaves the profile alone.
 
-**It needs `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as repository
-secrets.** No other workflow passes them, so if they are absent the loop can
-read nothing. Rather than report success and appear to work for weeks while
-learning nothing, a missing credential fails the run with a named error. That
-is safe to fail loudly: this workflow sends no email and gates no brief. A red
-tick on `learn.yml` is the only thing that tells you the loop is not wired up;
-a green one with `signals_read: 0` just means nobody tapped.
+**It needs `SUPABASE_URL` and `LOZ_SIGNAL_READ_KEY` as repository secrets.**
+If they are absent the loop can read nothing. Rather than report success and
+appear to work for weeks while learning nothing, a missing credential fails
+the run with a named error. That is safe to fail loudly: this workflow sends
+no email and gates no brief. A red tick on `learn.yml` is the only thing that
+tells you the loop is not wired up; a green one with `signals_read: 0` just
+means nobody tapped.
+
+`LOZ_SIGNAL_READ_KEY` is deliberately **not** the service key. Lozatron lives
+in a `lozatron` schema inside the Mindmaker OS project, and `service_role`
+there bypasses RLS on every table in it — contacts, `app_secrets`,
+`contact_intelligence`. Putting that into a public repository's Actions
+secrets to power one read-only function is not a trade worth making.
+
+So the token carries the `lozatron_reader` Postgres role: `NOLOGIN`,
+`NOINHERIT`, no role memberships, `EXECUTE` on `public.loz_recent_signals` and
+no table privileges. Verified live — it returns the signals, and is denied on
+both `lozatron.signals` and `public.contact_intelligence`.
+
+Mint it with `scripts/mint_reader_token.py`, which needs the project's JWT
+secret. **Run that locally and never paste the JWT secret anywhere** — it
+signs any role, including `service_role`, with any expiry. The script keeps it
+on your machine and prints only the scoped token.
+
+One caveat, recorded rather than hidden: 241 functions in `public` carry
+Postgres's default `EXECUTE` grant to `PUBLIC`, and `USAGE` on schema `public`
+is likewise granted to `PUBLIC`. A grant to `PUBLIC` cannot be revoked from a
+single role, so `lozatron_reader` can call those functions. It is not a new
+exposure — the project's anon key can already call all of them — but it means
+this credential is bounded by *what any anonymous caller can already do*,
+plus one read, rather than by one read alone. Narrowing it further means
+revoking default `PUBLIC` grants across the OS, which is a decision for the
+OS, not for Lozatron.
 
 ## The kill switch
 

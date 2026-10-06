@@ -286,6 +286,7 @@ def test_missing_credentials_fails_loudly(tmp_path, monkeypatch):
 
     monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    monkeypatch.delenv("LOZ_SIGNAL_READ_KEY", raising=False)
     result = app.learn(tmp_path / "profile.json", days=30)
     assert result["missing_credentials"] is True
     assert result["wrote_profile"] is False
@@ -300,6 +301,7 @@ def test_the_cli_exits_non_zero_without_credentials(tmp_path, monkeypatch):
 
     monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    monkeypatch.delenv("LOZ_SIGNAL_READ_KEY", raising=False)
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     monkeypatch.setattr("sys.argv", [
         "lozatron", "--learn", "--profile", str(tmp_path / "profile.json")])
@@ -315,3 +317,56 @@ def test_a_quiet_week_still_exits_zero(tmp_path, monkeypatch):
     monkeypatch.setattr("sys.argv", [
         "lozatron", "--learn", "--profile", str(tmp_path / "profile.json")])
     assert app.main() == 0
+
+
+# -- the credential the loop uses ---------------------------------------
+
+def test_the_scoped_reader_token_is_preferred_over_the_service_key(monkeypatch):
+    """CI must never fall back to service_role while a scoped token exists.
+
+    The service key bypasses RLS on every table in the Mindmaker OS project
+    and this loop runs in a public repository's Actions. `lozatron_reader` can
+    execute one function and read no table -- checked live against
+    lozatron.signals and public.contact_intelligence, both denied.
+    """
+    from lozatron import store
+
+    seen = {}
+
+    def spy(url, **kwargs):
+        seen["apikey"] = kwargs["headers"]["apikey"]
+        return []
+
+    monkeypatch.setattr(store.http, "request_json", spy)
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-key")
+    monkeypatch.setenv("LOZ_SIGNAL_READ_KEY", "scoped-key")
+    store.signals(days=30)
+    assert seen["apikey"] == "scoped-key"
+
+
+def test_the_service_key_still_works_for_a_local_run(monkeypatch):
+    """Only so an existing local environment keeps working."""
+    from lozatron import store
+
+    seen = {}
+
+    def spy(url, **kwargs):
+        seen["apikey"] = kwargs["headers"]["apikey"]
+        return []
+
+    monkeypatch.setattr(store.http, "request_json", spy)
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-key")
+    monkeypatch.delenv("LOZ_SIGNAL_READ_KEY", raising=False)
+    store.signals(days=30)
+    assert seen["apikey"] == "service-key"
+
+
+def test_the_workflow_passes_the_scoped_token_and_not_the_service_key():
+    """The point of the whole exercise, asserted against the workflow file."""
+    from pathlib import Path
+
+    text = Path(".github/workflows/learn.yml").read_text()
+    assert "LOZ_SIGNAL_READ_KEY" in text
+    assert "SUPABASE_SERVICE_ROLE_KEY" not in text

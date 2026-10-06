@@ -67,7 +67,13 @@ jobs:
       - name: Learn
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # The scoped reader token, NOT the service key. It carries role
+          # `lozatron_reader`, which can execute loz_recent_signals and read no
+          # table -- checked against lozatron.signals and
+          # public.contact_intelligence, both denied. The service key bypasses
+          # RLS on every table in the Mindmaker OS project, and this is a
+          # public repository. Mint with scripts/mint_reader_token.py.
+          LOZ_SIGNAL_READ_KEY: ${{ secrets.LOZ_SIGNAL_READ_KEY }}
         timeout-minutes: 5
         run: lozatron --learn --signal-days "${{ inputs.signal_days || '30' }}"
       - name: Commit the profile
