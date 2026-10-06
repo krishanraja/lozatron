@@ -664,82 +664,94 @@
       "AdExchanger": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "Adweek": {
         "delivered": 1,
-        "eligible": 1,
-        "fresh": 20,
-        "items": 20
+        "eligible": 2,
+        "fresh": 30,
+        "items": 30
       },
       "Bitcoinfoundation.org": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "Biztoc.com": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "Bleeding Cool News": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "Business Insider": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "BusinessLine": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "Businessesgrow.com": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "Darkugc.com": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 1,
-        "items": 1
+        "fresh": 2,
+        "items": 2
       },
       "Deadline": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 24,
-        "items": 24
+        "fresh": 36,
+        "items": 36
       },
       "Digiday": {
-        "delivered": 1,
-        "eligible": 8,
-        "fresh": 34,
-        "items": 38
+        "delivered": 2,
+        "eligible": 12,
+        "fresh": 51,
+        "items": 57
       },
       "Entrepreneur": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "Eurogamer.net": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "Financial Post": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 2,
         "items": 2
       },
-      "Financial Post": {
+      "Forrester.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Frontofficesports.com": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 1,
@@ -748,164 +760,164 @@
       "GamesIndustry.biz": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "Glossy": {
         "delivered": 0,
-        "eligible": 2,
-        "fresh": 14,
-        "items": 40
+        "eligible": 3,
+        "fresh": 21,
+        "items": 60
       },
       "Hollywood Reporter": {
         "delivered": 1,
         "eligible": 1,
-        "fresh": 22,
-        "items": 22
+        "fresh": 33,
+        "items": 33
       },
       "IndieWire": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 4,
-        "items": 4
+        "fresh": 6,
+        "items": 6
       },
       "Influencer Marketing Hub": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 4,
-        "items": 18
+        "fresh": 6,
+        "items": 27
       },
       "Kajabi": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 0,
-        "items": 80
+        "items": 120
       },
       "Marketingchief.com": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "NetInfluencer": {
-        "delivered": 3,
-        "eligible": 14,
-        "fresh": 20,
-        "items": 20
+        "delivered": 5,
+        "eligible": 21,
+        "fresh": 30,
+        "items": 30
       },
       "New York Magazine": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "PRNewswire": {
+        "delivered": 1,
+        "eligible": 5,
+        "fresh": 10,
+        "items": 10
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 3,
+        "fresh": 9,
+        "items": 30
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 6,
+        "items": 120
+      },
+      "Provideocoalition.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "Search Engine Journal": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 6,
+        "items": 6
+      },
+      "Social Media Today": {
+        "delivered": 0,
+        "eligible": 3,
+        "fresh": 30,
+        "items": 30
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 30
+      },
+      "Stratechery.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 60,
+        "items": 60
+      },
+      "Techdogs.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "The Times of India": {
         "delivered": 1,
         "eligible": 3,
         "fresh": 6,
         "items": 6
       },
-      "Passionfruit": {
-        "delivered": 0,
-        "eligible": 2,
-        "fresh": 6,
-        "items": 20
-      },
-      "Podnews": {
-        "delivered": 0,
-        "eligible": 0,
-        "fresh": 4,
-        "items": 80
-      },
-      "Provideocoalition.com": {
-        "delivered": 0,
-        "eligible": 0,
-        "fresh": 2,
-        "items": 2
-      },
-      "Search Engine Journal": {
-        "delivered": 0,
-        "eligible": 0,
-        "fresh": 4,
-        "items": 4
-      },
-      "Social Media Today": {
-        "delivered": 0,
-        "eligible": 2,
-        "fresh": 20,
-        "items": 20
-      },
-      "Spotify Newsroom": {
-        "delivered": 0,
-        "eligible": 0,
-        "fresh": 1,
-        "items": 20
-      },
-      "Stratechery.com": {
-        "delivered": 0,
-        "eligible": 0,
-        "fresh": 2,
-        "items": 2
-      },
-      "TechCrunch": {
-        "delivered": 0,
-        "eligible": 1,
-        "fresh": 40,
-        "items": 40
-      },
-      "Techdogs.com": {
-        "delivered": 0,
-        "eligible": 0,
-        "fresh": 2,
-        "items": 2
-      },
-      "The Times of India": {
-        "delivered": 1,
-        "eligible": 2,
-        "fresh": 4,
-        "items": 4
-      },
       "The Verge": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 20,
-        "items": 20
+        "fresh": 30,
+        "items": 30
       },
       "TheWrap": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 1,
-        "items": 1
+        "fresh": 2,
+        "items": 2
       },
       "Theregister.com": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 1,
-        "items": 1
+        "fresh": 2,
+        "items": 2
       },
       "Tubefilter": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 4,
-        "items": 24
+        "fresh": 6,
+        "items": 36
       },
       "Variety": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 20,
-        "items": 20
+        "fresh": 30,
+        "items": 30
       },
       "WWD": {
         "delivered": 0,
         "eligible": 0,
-        "fresh": 2,
-        "items": 2
+        "fresh": 3,
+        "items": 3
       },
       "YouTube Blog": {
         "delivered": 0,
         "eligible": 0,
         "fresh": 0,
-        "items": 40
+        "items": 60
       }
     }
   },
