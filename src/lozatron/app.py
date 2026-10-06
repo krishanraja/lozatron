@@ -468,6 +468,10 @@ def preview(mode: str, state_path: Path) -> dict[str, object]:
     subject = f"[PREVIEW] {subject}"
 
     to = gmail.ops_recipients()
+    # Fails the run rather than sending if ops resolves to the reader. See
+    # gmail.assert_not_reader: Krish approves every test before Lauren sees
+    # one, and that rule needs a mechanism, not a memory.
+    gmail.assert_not_reader(to, "preview recipients")
     sent = False
     if to:
         gmail.send(subject, text_body, html_body, to=to, cc=[])

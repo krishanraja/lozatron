@@ -118,6 +118,29 @@ is the source of truth, the edge function and the SQL function each hold a
 mirror of it, and both carry a comment saying so. They disagreed once already
 and every feedback button on a manually sent edition returned "expired".
 
+## Sending a test
+
+**Krish approves every test before Lauren sees one.** This is a standing rule,
+not a preference, and it has been broken once.
+
+There is exactly one approved way to send a test: dispatch `preview.yml`. It
+addresses `LOZ_OPS_EMAILS` only, never resolves the brief's recipients, never
+reads or writes the delivery ledger, and prefixes the subject `[PREVIEW]`.
+`app.preview` also calls `gmail.assert_not_reader`, which fails the run rather
+than sending if the ops list ever resolves to a reader address -- the hole that
+would open the day somebody adds Lauren to `LOZ_CC_EMAILS`.
+
+**Never dispatch `briefings.yml` with `dry_run=false` as a test.** That is the
+real delivery path and it goes to Lauren. This is how the rule was broken on
+6 October: no code path misbehaved, the wrong workflow was dispatched. Nothing
+in the code can prevent that, because sending to her is that workflow's job.
+
+After any run that sends, verify what actually landed before reporting it.
+Cancelling a workflow does not recall an email: on 6 October a run was
+cancelled seconds after the send had already completed, and the cancellation
+was reported as having stopped it. Read the recipient list on the sent message,
+not the run's status.
+
 ## The kill switch
 
 `READER_DELIVERY_ENABLED` in `src/lozatron/gmail.py` decides whether the brief

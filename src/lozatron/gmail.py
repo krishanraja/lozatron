@@ -7,6 +7,7 @@ import os
 import urllib.parse
 from email.message import EmailMessage
 from email.utils import make_msgid
+from collections.abc import Iterable
 
 from . import http
 
@@ -81,6 +82,47 @@ def recipients() -> list[str]:
             )
         return ops
     return configured_reader_recipients()
+
+
+def known_reader_recipients() -> list[str]:
+    """The reader list, or empty if it is not configured in this environment.
+
+    `configured_reader_recipients` raises when LOZ_RECIPIENT_EMAILS is unset,
+    which is correct for a real send and wrong for a safety check: the preview
+    workflow deliberately does not set that secret, and a guard that raises
+    there would turn "there is nobody to collide with" into a failed run.
+    """
+    try:
+        return configured_reader_recipients()
+    except Exception:
+        return []
+
+
+def assert_not_reader(addresses: Iterable[str], what: str) -> None:
+    """Refuse to send a test to the reader. Fails closed, by design.
+
+    On 6 October a test reached Lauren directly. The cause was dispatching the
+    delivery workflow rather than the preview one, so no code path was at
+    fault -- but `ops_recipients` falls back to LOZ_CC_EMAILS, and if her
+    address were ever added to that secret a preview would reach her too, with
+    nothing to catch it. Krish's standing rule is that he approves every test
+    before she sees it, and a rule enforced only by my memory is not enforced.
+
+    So this raises rather than filtering: silently dropping a recipient would
+    send a preview that looks delivered and went nowhere, which is its own
+    quiet failure. The caller should be addressing ops and nothing else, and
+    if it is not, the right outcome is a loud, failed run.
+    """
+    readers = {item.casefold() for item in known_reader_recipients()}
+    if not readers:
+        return
+    collisions = sorted({item for item in addresses if item.casefold() in readers})
+    if collisions:
+        raise RuntimeError(
+            f"{what} resolved to a brief recipient ({', '.join(collisions)}). "
+            "A test must never reach the reader; check LOZ_OPS_EMAILS and "
+            "LOZ_CC_EMAILS."
+        )
 
 
 def ops_recipients() -> list[str]:
