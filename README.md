@@ -164,6 +164,18 @@ counted in the committed ledger and checked immediately before `gmail.send`.
 It bounds every path at once, so no future gate or flag can produce a flood
 whatever else is misconfigured.
 
+A dispatch a person made gets `MAX_MANUAL_SENDS_PER_DAY`, which is three. The
+flood risk is in the automated paths — a schedule firing repeatedly, a rule
+switched off by a missing variable, a knock that cannot see the ledger — and a
+person forcing one named send is accountable in a way none of those are. It is
+raised, not removed, so an unbounded manual path cannot reinvent the flood.
+
+The VPS clock dispatches via `workflow_dispatch` and is deliberately **not**
+counted as manual: it stands in for the schedule, and letting it inherit the
+human ceiling would give an automated path the one exemption written for a
+person. That is the same mistake as the original flood, where a safety rule
+was wired into one of the two workflows that needed it.
+
 ## Delivery slots
 
 GitHub's scheduler is best-effort: observed runs on this repository arrive

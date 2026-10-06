@@ -228,8 +228,9 @@ def test_the_daily_ceiling_suppresses_a_send_beyond_the_cap(tmp_path, monkeypatc
 def _gate_seen_by_main(monkeypatch, tmp_path, event, trigger):
     seen = {}
 
-    def spy(mode, state, spend_state, dry_run, slot_gate=False):
+    def spy(mode, state, spend_state, dry_run, slot_gate=False, manual=False):
         seen["slot_gate"] = slot_gate
+        seen["manual"] = manual
         return {}
 
     monkeypatch.setattr(app, "run", spy)
@@ -243,6 +244,12 @@ def _gate_seen_by_main(monkeypatch, tmp_path, event, trigger):
                                      "--state", str(tmp_path / "d.json"),
                                      "--spend-state", str(tmp_path / "s.json")])
     assert app.main() == 0
+    # The clock must be gated like a schedule AND must not inherit the human
+    # send ceiling. Asserting both here keeps the two from drifting apart: the
+    # clock arrives as a workflow_dispatch, so a naive manual check would hand
+    # an automated path the exemption written for a person.
+    if trigger == "clock":
+        assert seen["manual"] is False
     return seen["slot_gate"]
 
 

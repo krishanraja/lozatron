@@ -81,7 +81,14 @@ def run(
     dry_run: bool,
     *,
     slot_gate: bool = False,
+    manual: bool = False,
 ) -> dict[str, object]:
+    """Render and, unless dry_run, deliver one brief.
+
+    `manual` says a person dispatched this run, which only raises the daily
+    send ceiling. It defaults to False so a scheduled or clock-triggered run
+    keeps the automated ceiling without having to pass anything.
+    """
     now = utcnow()
     state = DeliveryState(state_path).load()
 
@@ -274,13 +281,15 @@ def run(
     should_send = bool(selected)
     # Fail-closed daily ceiling. It bounds every send path at once, so no
     # future gate, flag or workflow can produce a flood whatever else is
-    # misconfigured.
-    ceiling_hit = should_send and not state.permits_send(now)
+    # misconfigured. A manual dispatch gets one more than an automated one and
+    # is still bounded; see DeliveryState.MAX_MANUAL_SENDS_PER_DAY.
+    ceiling_hit = should_send and not state.permits_send(now, manual=manual)
     if ceiling_hit:
         should_send = False
         print(
             "::warning title=Daily email ceiling reached::"
-            f"{state.sends_today(now)} brief(s) already sent today; suppressing."
+            f"{state.sends_today(now)} brief(s) already sent today, "
+            f"ceiling {state.send_ceiling(manual=manual)}; suppressing."
         )
     if should_send and not dry_run:
         message_id = gmail.send(subject, text_body, html_body, edition_id=edition)
@@ -574,7 +583,18 @@ def main() -> int:
         )
         and not args.no_slot_gate
     )
-    result = run(args.mode, args.state, args.spend_state, args.dry_run, slot_gate=slot_gate)
+    # A person dispatched this if GitHub says it was a workflow_dispatch and
+    # the trigger input is not the VPS clock. The clock stands in for the
+    # schedule, so it must not inherit a human's higher send ceiling -- that
+    # would hand an automated path the one exemption meant for a person.
+    manual = (
+        os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+        and os.environ.get("LOZ_TRIGGER") not in ("clock", "schedule")
+    )
+    result = run(
+        args.mode, args.state, args.spend_state, args.dry_run,
+        slot_gate=slot_gate, manual=manual,
+    )
     output = json.dumps(result, indent=2, default=str)
     print(output)
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")

@@ -805,6 +805,24 @@ class DeliveryState:
     # One slot a day means the expected count is 1; 2 leaves room for a manual
     # re-send without needing a code change.
     MAX_SENDS_PER_DAY = 2
+
+    # A person pressing the button gets one more, and the ceiling still holds.
+    #
+    # The ceiling exists because a bug once flooded Lauren's inbox, and that
+    # risk lives entirely in the automated paths: a schedule firing
+    # repeatedly, a rule switched off by a missing variable, a knock that
+    # cannot see the ledger. None of those describe Krish asking for a
+    # specific third send on a specific afternoon, which is accountable to a
+    # person in a way no automated path is.
+    #
+    # So a manual dispatch raises the ceiling rather than removing it. The
+    # distinction is the one the slot gate and the enable switch already draw
+    # on the trigger, and the number stays small on purpose: an unbounded
+    # manual path would reinvent the flood the day somebody scripts dispatches
+    # in a loop. Raising this is a deliberate act, not a default -- it was
+    # added on 6 October with Krish's explicit approval, after the automated
+    # ceiling correctly blocked a send he had asked for.
+    MAX_MANUAL_SENDS_PER_DAY = 3
     SEND_RETENTION_DAYS = 14
 
     def __init__(self, path: Path):
@@ -855,14 +873,23 @@ class DeliveryState:
     def sends_today(self, when: dt.datetime) -> int:
         return int(self.sends.get(when.astimezone(UTC).date().isoformat(), 0))
 
-    def permits_send(self, when: dt.datetime) -> bool:
+    def send_ceiling(self, *, manual: bool = False) -> int:
+        """Today's ceiling. Higher for a person, never absent."""
+        return self.MAX_MANUAL_SENDS_PER_DAY if manual else self.MAX_SENDS_PER_DAY
+
+    def permits_send(self, when: dt.datetime, *, manual: bool = False) -> bool:
         """Fail-closed daily email ceiling.
 
         Deliberately consulted after selection and before Gmail, so it bounds
         every path — briefing, breaking, or anything added later — rather than
         any one gate.
+
+        `manual` raises the ceiling for a dispatch a person made. It is
+        keyword-only and defaults to False so that every existing caller, and
+        every one added later, keeps the lower ceiling without having to know
+        this argument exists. Opting in to the higher one has to be explicit.
         """
-        return self.sends_today(when) < self.MAX_SENDS_PER_DAY
+        return self.sends_today(when) < self.send_ceiling(manual=manual)
 
     def record_send(self, when: dt.datetime) -> None:
         day = when.astimezone(UTC).date().isoformat()
