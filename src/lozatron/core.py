@@ -61,6 +61,44 @@ STRONG_TERMS = (
 )
 
 
+# Sites that republish other outlets' work. On 6 October the brief told Lauren
+# an agency-fees story was carried by "Digiday and Biztoc.com", which reads as
+# two independent outlets confirming each other. Biztoc is a scraper
+# republishing Digiday, so the corroboration count was inflated by a copy of
+# the same article, and a syndicated copy can end up leading the entry with an
+# aggregator's name on it.
+#
+# Her preference brief names this twice: it rejects "old news presented as
+# today, especially when a secondary outlet was not the original source", and
+# "over-reliance on search aggregators".
+AGGREGATORS = frozenset({
+    "biztoc.com", "biztoc", "news.google.com", "msn.com", "www.msn.com",
+    "news.yahoo.com", "yahoo", "finance.yahoo.com", "flipboard.com",
+    "smartnews.com", "newsbreak.com", "apple.news", "inoreader.com",
+    "feedly.com", "aol.com", "headtopics.com", "newsnow.co.uk",
+    "news.knowledia.com", "theweek.com/newsletters", "techmeme.com",
+    "memeorandum.com", "slashdot.org", "reddit.com", "linkedin.com",
+    "medium.com", "substack.com",
+})
+
+
+def is_aggregator(source: str, url: str = "") -> bool:
+    """Is this a republisher rather than the outlet that did the work?
+
+    Matched on the source name and the URL host, because NewsAPI reports the
+    republisher's own name ("Biztoc.com") while the link often still points at
+    the original.
+    """
+    name = (source or "").strip().casefold()
+    if name in AGGREGATORS:
+        return True
+    try:
+        host = urllib.parse.urlsplit(url).netloc.casefold().removeprefix("www.")
+    except ValueError:
+        host = ""
+    return bool(host) and (host in AGGREGATORS or f"www.{host}" in AGGREGATORS)
+
+
 # Feeds append this when they truncate a description.
 _RSS_TRUNCATION = re.compile(r"\s*\[(?:\u2026|\.\.\.)\]\s*$")
 _TAG = re.compile(r"<[^>]+>")
@@ -334,7 +372,36 @@ DOMAIN_TERMS = CORE_TERMS + QUALIFIED_TERMS
 # Freshness is arithmetic and stays in code, always. This is the June 2026
 # crisis encoded: a rule that lives in prompt text is not a rule.
 JUNK_TITLE = re.compile(r"\btop\s+\d+\b")
-JUNK_PHRASES = ("internship", "job opening", "apply now")
+
+# Rejection patterns her preference brief names that were never in code.
+# Measured: the 21 September edition delivered "Creator Economy Event Calendar
+# - September 21, 2026 - VidSummit", which is the first item on this list.
+#
+# From the brief, verbatim: "Routine event calendars, jobs, hotel or
+# enterprise-tech items, and generic influencer-marketing explainers outside
+# the business-of-creators mandate."
+JUNK_PHRASES = (
+    # jobs
+    "internship", "job opening", "apply now", "we're hiring", "we are hiring",
+    "now hiring", "job board", "careers at",
+    # routine calendars and listings, which recur forever and date instantly
+    "event calendar", "events calendar", "calendar of events",
+    "upcoming events", "events roundup", "what's on this week",
+    "webinar", "save the date", "register now", "early bird",
+    "call for speakers", "call for entries", "nominations open",
+    "award winners", "shortlist announced",
+    # Hotel and enterprise tech, named in the brief as out of mandate. Kept
+    # narrow on purpose: `eligible` already requires a creator term in the
+    # headline, so a bare "hotel" or "cybersecurity" here would add almost no
+    # rejections and would wrongly bin a creator opening a hotel brand, which
+    # is a real creator-business move.
+    "hotel booking", "hotel tech", "hospitality tech", "property management system", "enterprise software", "cloud migration", "data centre",
+    "data center",
+    # generic explainers with no business event behind them
+    "beginner's guide", "beginners guide", "ultimate guide", "complete guide",
+    "everything you need to know", "what you need to know about",
+    "how to get started", "tips and tricks", "frequently asked",
+)
 
 
 _DOMAIN = None

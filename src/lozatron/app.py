@@ -234,6 +234,22 @@ def run(
             filtered=filtered, edition_id=edition,
             mechanics=mechanics, commentary=commentary, patterns=patterns,
         )
+        # A story the analyst did not reach is thinner than her depth rule
+        # allows, and shipping it beside analysed ones is the padding rule 2
+        # forbids. Dropped, counted, and the fingerprint is left unmarked so
+        # it can come back tomorrow with analysis.
+        thin = document.drop_thin_entries()
+        if thin:
+            thin_keys = {entry.cluster_key for entry in thin}
+            selected = [cluster.leader for cluster in clusters
+                        if cluster.key not in thin_keys]
+            to_mark = [member for cluster in clusters
+                       if cluster.key not in thin_keys
+                       for member in cluster.members]
+            to_mark += [member for cluster in mechanics for member in cluster.members]
+            filtered["unanalysed"] = len(thin)
+            print(f"::notice title=Dropped unanalysed::{len(thin)} story(ies) "
+                  f"had no analysis and were held back rather than sent thin.")
         try:
             subject, text_body, html_body = render_mod.render(document)
         except ValueError:

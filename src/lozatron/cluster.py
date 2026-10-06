@@ -331,11 +331,29 @@ class Cluster:
         basis = " ".join(sorted(self.tokens)) or self.leader.title.casefold()
         return "cl_" + hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
 
+    # Tiers that are not an outlet doing the work: chatter, one person's post,
+    # and a site republishing somebody else's article.
+    NOT_AN_OUTLET = frozenset({"community", "social", "syndicated"})
+
     @property
     def outlets(self) -> list[str]:
+        """The outlets that actually reported this, named once each.
+
+        A republisher is excluded. The brief told Lauren a story was carried
+        by "Digiday and Biztoc.com", which reads as two outlets agreeing when
+        it is one article and a scrape of it.
+        """
         seen: dict[str, None] = {}
         for story in self.members:
+            if story.tier in self.NOT_AN_OUTLET:
+                continue
             seen.setdefault(story.source, None)
+        if not seen:
+            # Nothing but chatter or copies. Name what there is rather than
+            # render an entry with no attribution at all; `confirmed` stops
+            # this shipping as a story anyway.
+            for story in self.members:
+                seen.setdefault(story.source, None)
         return list(seen)
 
     @property
@@ -357,11 +375,12 @@ class Cluster:
         subreddits flood the pool with tech-support questions, beginner advice
         and streamer drama, which is exactly what it produced when measured.
 
-        Social is held to the same bar for the same reason. A cluster needs at
-        least one member that is reporting -- trade, primary or analysis --
-        before it can ship as a story.
+        Social is held to the same bar for the same reason, and so is a
+        syndicated copy: a scrape of an article is not a second outlet
+        confirming it. A cluster needs at least one member that is reporting --
+        trade, primary or analysis -- before it can ship as a story.
         """
-        return bool(self.tiers - {"community", "social"})
+        return bool(self.tiers - self.NOT_AN_OUTLET)
 
     @property
     def primary(self) -> bool:
@@ -379,7 +398,11 @@ def build_clusters(stories: list[Story]) -> list[Cluster]:
     transitive chain-merge, where A~B and B~C but A is unlike C, collapsing
     three separate events into one blob.
     """
-    ordered = sorted(stories, key=lambda s: (s.published_at, normalize_url(s.url), s.title))
+    # Republished copies and chatter sort last, so a cluster is led by an
+    # outlet that did the work. Within each group the order is still
+    # deterministic, which is what keeps assignment reproducible.
+    ordered = sorted(stories, key=lambda s: (
+        s.tier in Cluster.NOT_AN_OUTLET, s.published_at, normalize_url(s.url), s.title))
     clusters: list[Cluster] = []
     for story in ordered:
         tokens, anchors = canon_tokens(story.title)

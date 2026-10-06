@@ -121,6 +121,24 @@ SYSTEM = (
     "never restate the summary you were given. Judge novelty against the list of "
     "items already delivered. Write plain sentences. Each field is a single "
     "paragraph with no formatting, no lists, no links and no line breaks."
+    "\n\n"
+    # The reader's own stated rules. The mechanical ones are enforced in code
+    # below; these are the ones only the writer can satisfy, so they are said
+    # here as well. Her brief: "Direct, punchy, declarative. Lead with the
+    # point." And: no warm-up sentences, no self-narration, no buzzwords, no
+    # claims that have not earned themselves.
+    "House rules, which the reader set herself and checks for:\n"
+    "Lead with the point. Start on the substance, never on a sentence that "
+    "announces a point is coming. Do not open with 'It illustrates', 'This "
+    "shows', 'This is the pattern', 'The relevant insight is', 'Notably', "
+    "'Importantly' or any variant. Write 'Renting is now the growth segment' "
+    "rather than 'It illustrates how renting is now the growth segment'.\n"
+    "Never use an em dash or an en dash. Use a comma, a colon or a full stop. "
+    "A field containing one is discarded.\n"
+    "No buzzwords, corporate platitudes, adjective stacks or hedging. If a "
+    "claim cannot be supported from the story in front of you, cut it.\n"
+    "Give numbers where the story gives them, and name the specific company, "
+    "creator or figure rather than a category."
 )
 
 SCHEMA: dict[str, Any] = {
@@ -159,6 +177,102 @@ SCHEMA: dict[str, Any] = {
 FORBIDDEN = re.compile(r"https?://|www\.|\]\(|<[a-zA-Z]|&#|\*\*|__|##|`|^\s*[-*]\s", re.MULTILINE)
 
 
+# --- her voice rules, as code -------------------------------------------
+#
+# The preference brief's own top lesson: "Taste must become gates. Freshness,
+# deduplication, evidence, scope, depth and source diversity work best as
+# deterministic checks, not prompt reminders." These are the voice half of
+# that, and they are checkable, so they are checked.
+#
+# Rule: no em dashes or en dashes in copy. Flat refusal, not a preference.
+DASHES = re.compile(r"[\u2014\u2013]")
+
+# Rule: lead with the point. No warm-up sentences, no self-narration.
+# Measured on the 3 October edition, which opened analysis with "It
+# illustrates how...", "This is the maturation pattern worth tracking:" and
+# "The relevant insight is that...". Each spends the opening announcing that a
+# point is coming instead of making it.
+#
+# Only a prefix that ends in `that`, `how` or a colon is stripped, because
+# only then does the remainder stand on its own as a clause. "This is a
+# financier, not a studio development arm" has no such hinge, so stripping it
+# would leave a fragment, and it is left alone. A bare adverb opener is always
+# safe to drop.
+WARMUP_LABEL = re.compile(
+    r"^\s*(?:"
+    r"(?:it|this|that)\s+(?:is|was|shows|illustrates|highlights|signals|"
+    r"suggests|underscores|demonstrates|reflects|proves|confirms|means)\b"
+    r"[^.?!:]{0,80}?\s(?:that|how)\s"
+    r"|(?:it|this|that)\s+is\b[^.?!:]{0,80}:\s"
+    r"|the\s+(?:relevant\s+)?(?:insight|takeaway|point|upshot|implication|"
+    r"lesson)\s+(?:here\s+)?is\s+(?:that\s+)?"
+    r"|what\s+this\s+means\s+is\s+(?:that\s+)?"
+    r"|(?:it\s+is\s+)?worth\s+noting\s+(?:that\s+)?"
+    r"|the\s+bottom\s+line\s+is\s+(?:that\s+)?"
+    r"|(?:importantly|notably|interestingly|crucially|significantly|"
+    r"in\s+other\s+words|at\s+the\s+end\s+of\s+the\s+day)\s*[,:]\s*"
+    r")",
+    re.IGNORECASE,
+)
+
+# A complete sentence that is nothing but throat-clearing, e.g. "This is
+# notable." Removed whole, because the point is in the sentence after it.
+WARMUP_SENTENCE = re.compile(
+    r"^\s*(?:it|this|that)\s+(?:is|was)\s+"
+    r"(?:notable|striking|significant|interesting|telling|important|"
+    r"worth\s+noting|the\s+key\s+point)\s*[.!]\s*",
+    re.IGNORECASE,
+)
+
+# Shortest remainder worth keeping. Below this the strip has probably eaten
+# the content rather than the preamble.
+MIN_AFTER_STRIP = 24
+
+# Rule: no buzzwords, corporate platitudes, adjective stacks or AI-glossed
+# prose. Reported rather than rejected, because the line between jargon and
+# the correct term of art is a judgement call and silently binning a good
+# analysis over one word would be worse than the word.
+BUZZWORDS = (
+    "synergy", "supercharge", "game-changer", "game-changing", "best-in-class",
+    "world-class", "holistic", "seamless", "cutting-edge", "paradigm shift",
+    "north star", "moving the needle", "low-hanging fruit", "value-add",
+    "leverage our", "unlock value", "thought leadership", "deep dive",
+    "circle back", "double-click", "table stakes", "secret sauce",
+    "it is important to note", "in today's fast-paced",
+)
+
+
+def strip_warmup(text: str) -> str:
+    """Remove throat-clearing from the front of a field.
+
+    Applied repeatedly, because the model stacks them: "This is notable. It
+    shows how X" is two openers in front of the sentence that carries the
+    point. Never returns less than `MIN_AFTER_STRIP` characters: a mangled
+    fragment is worse than an unfashionable opener, so on anything doubtful
+    the original stands.
+    """
+    original = str(text or "")
+    out = original
+    for _ in range(4):
+        trimmed = WARMUP_SENTENCE.sub("", out, count=1)
+        if trimmed == out:
+            trimmed = WARMUP_LABEL.sub("", out, count=1)
+        if trimmed == out:
+            break
+        if len(trimmed.strip()) < MIN_AFTER_STRIP:
+            break
+        out = trimmed
+    cleaned = out.strip()
+    if len(cleaned) < MIN_AFTER_STRIP:
+        return original
+    return cleaned[0].upper() + cleaned[1:] if cleaned[:1].islower() else cleaned
+
+
+def buzzwords_in(text: str) -> list[str]:
+    low = str(text or "").casefold()
+    return [word for word in BUZZWORDS if word in low]
+
+
 def rejected(raw: object) -> bool:
     """Judge the model's text as it was written, not as it cleans up.
 
@@ -167,7 +281,11 @@ def rejected(raw: object) -> bool:
     contract is one paragraph per field, so a line break is itself a rejection.
     """
     text = str(raw or "")
-    return "\n" in text or "\r" in text or bool(FORBIDDEN.search(text))
+    if "\n" in text or "\r" in text or FORBIDDEN.search(text):
+        return True
+    # Her rule, stated as a flat refusal rather than a preference: no em
+    # dashes, no en dashes. A field carrying one is rewritten, not shipped.
+    return bool(DASHES.search(text))
 
 
 class AnalystError(RuntimeError):
@@ -499,7 +617,8 @@ def validate(raw: dict[str, Any], known: set[str]) -> tuple[str, dict[str, Story
         if any(rejected(item.get(name)) for name in names):
             dropped.append(key)
             continue
-        fields = {name: _clean(item.get(name), MAX_FIELD) for name in names}
+        fields = {name: strip_warmup(_clean(item.get(name), MAX_FIELD))
+                  for name in names}
         if any(len(value) < 15 for value in fields.values()):
             dropped.append(key)
             continue

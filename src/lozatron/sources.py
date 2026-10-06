@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from typing import Iterable
 
 from . import http
-from .core import Story, parse_datetime, utcnow
+from .core import Story, is_aggregator, parse_datetime, utcnow
 
 # Trade publications. Lauren's rule: these CONFIRM a story, they are not the
 # discovery layer. Every URL here was fetched and parsed before being added;
@@ -258,6 +258,13 @@ def newsapi_stories(now: dt.datetime | None = None) -> tuple[list[Story], list[s
                         source=(item.get("source") or {}).get("name") or "NewsAPI",
                         published_at=published,
                         summary=item.get("description") or "",
+                        # A republisher is not a second outlet. Tagged at
+                        # ingest so clustering can refuse to count it as
+                        # corroboration or let it lead an entry.
+                        tier=("syndicated"
+                              if is_aggregator((item.get("source") or {}).get("name") or "",
+                                               item.get("url") or "")
+                              else "trade"),
                     ))
         except Exception as exc:
             errors.append(f"NewsAPI: {type(exc).__name__}")

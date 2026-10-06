@@ -95,6 +95,27 @@ class Brief:
     def analysed(self) -> bool:
         return any(entry.analysed for entry in self.entries)
 
+    def drop_thin_entries(self) -> list[Entry]:
+        """Remove stories the analyst did not cover, when it covered others.
+
+        On 6 October Lauren got four stories, three with the full what
+        happened / why it matters / what to watch treatment and one as a bare
+        feed blurb. Her brief is explicit on both counts: depth is part of the
+        product and one-line summaries are too thin, and fewer strong stories
+        beat a list containing weak ones. An uncovered story beside covered
+        ones is the weak item.
+
+        Only applies when the analyst actually produced something. If it
+        failed for the whole edition, every story is thin together and the
+        deterministic brief is the honest fallback, flagged as degraded.
+        """
+        if not self.analysed:
+            return []
+        thin = [entry for entry in self.entries if not entry.analysed]
+        if thin:
+            self.entries = [entry for entry in self.entries if entry.analysed]
+        return thin
+
 
 def compose(
     clusters: list[Any],
