@@ -83,6 +83,41 @@ declaration hid thirty live items behind the single word `ParseError` in a
 swallowed error list. Counts only: no titles, no URLs, nothing about what
 Lauren read.
 
+## How Lauren talks back
+
+She asked on 5 October 2026: "is there anyway for me to interact with the AI? I
+prefer chatting to it and being able to have some control in pushing it to
+gather stories", and "this view introduces friction where I need to go through
+you." Until then every route into Lozatron went through Krish.
+
+Every story now carries two one-tap verdicts, **More like this** and **Not for
+me**, and every edition carries **Tell Lozatron what to chase**. The button
+lands on a page with her choice already selected, so it is one tap, an
+optional note, send. Nothing is read from an inbox, so no instruction has to be
+guessed out of prose.
+
+- Endpoint: `supabase/functions/loz-signal`, a Supabase edge function.
+- Storage: `lozatron.signals`, written through `public.loz_record_signal`, a
+  SECURITY DEFINER function granted to `service_role` alone. The RPC exists
+  because the `lozatron` schema is deliberately not exposed over the project
+  API, and widening the exposed-schema list for one insert would put a private
+  schema on a public surface.
+- The service key stays server side. An anon key on this project reaches
+  mind/make OS tables, so no browser may ever hold one.
+- The links are unsigned, which is a real trade-off rather than an oversight.
+  The brief renders in GitHub Actions with no signing secret shared with the
+  function. The endpoint bounds the damage instead: four known actions, a
+  bounded note, and only an edition id matching `core.EDITION_ID_RE` and dated
+  inside the retention window. The worst case is a junk preference row in a
+  table nothing acts on automatically.
+- If the write fails, her words are echoed back on the page to be copied
+  rather than silently lost.
+
+**The edition id is a contract across three codebases**: `core.EDITION_ID_RE`
+is the source of truth, the edge function and the SQL function each hold a
+mirror of it, and both carry a comment saying so. They disagreed once already
+and every feedback button on a manually sent edition returned "expired".
+
 ## The kill switch
 
 `READER_DELIVERY_ENABLED` in `src/lozatron/gmail.py` decides whether the brief
