@@ -46,8 +46,43 @@ says said exclusive update updates announce announces announced launch launches
 first latest top best big biggest major
 """.split())
 
-# Known entities. Capitalisation is unreliable as a proper-noun signal because
-# many headlines are Title Case, so a curated vocabulary carries the weight.
+# The vocabulary of a news headline that is NOT an entity: the verbs outlets
+# use for corporate events, and the generic nouns that frame them.
+#
+# This is what lets capitalisation work as a proper-noun signal again. The old
+# code gave up on it in Title Case headlines and leaned on a 76-name vocabulary
+# instead, which meant any company not on that list produced ZERO anchors. On
+# 6 October Lauren received the same acquisition twice, as two numbered
+# stories, because "THE-TEAM Acquires UK Creator Agency Outreach Talent Group"
+# and "The Team Buys U.K. Creators Agency In Expansion Move" between them
+# yielded no anchors at all and overlapped on barely a third of their words.
+#
+# Inverting it is far more robust: a capitalised token that is not one of these
+# common headline words is almost always a name, and there are only so many
+# ways a trade publication can say "bought".
+HEADLINE_COMMON = frozenset("""
+acquires acquire acquired acquisition buys buy bought purchase purchases
+takeover merges merger acquiring snaps launches launch launched launching
+unveils unveil debuts opens open opening starts start rolls raises raise
+raised funding closes close signs sign signed signing inks ink hires hire
+hired hiring names name named appoints appoint appointed promotes promoted
+taps tap joins join joining leaves exits exit departs steps backs back
+invests invest investment funds fund partners partner partnership deal deals
+sells sell sold sale divests spins spinoff expands expand expansion grows
+grow growth adds add adding brings bring takes take makes make gets get
+plans plan eyes eye weighs weigh mulls explores exploring considers sets set
+builds build building moves move launches wins win lands land secures secure
+boosts boost cuts cut drops drop ends end halts halt pauses returns return
+agency agencies group company companies firm business businesses division
+unit units arm team teams platform platforms service services product
+products brand brands market markets industry sector move moves push pushes
+bid bids stake shares share holding venture ventures studio studios
+million billion thousand percent year years month months week weeks day days
+move expansion reach deal stake roster bench
+""".split())
+
+# Retained for the handful of lowercase platform names that would otherwise be
+# missed, since those arrive uncapitalised in handles and URLs.
 ANCHOR_VOCAB = frozenset("""
 youtube tiktok instagram facebook meta snapchat snap twitch kick spotify apple
 amazon netflix disney google alphabet twitter threads bluesky patreon substack
@@ -58,6 +93,10 @@ colin samir markiplier pewdiepie dude perfect hasan pokimane ninja kaicenat
 tubefilter deadline variety digiday techcrunch verge podnews passionfruit
 linktree beehiiv ghost gumroad cameo whatnot fanfix onlyfans
 """.split())
+
+# "U.K." tokenises to ["U", "K"] under a word regex, so an outlet writing
+# U.K. and one writing UK share nothing. Collapse the dots first.
+DOTTED = re.compile(r"\b(?:[A-Za-z]\.){2,}")
 
 MONEY = re.compile(r"^\$?\d[\d,.]*[mbk]?$", re.IGNORECASE)
 # "$400 Million" and "$400M" are the same amount written two ways. Left
@@ -84,6 +123,47 @@ WORD = re.compile(r"[^\W_]+", re.UNICODE)
 MERGE_ANCHORED = 72     # similar enough, and the proper nouns agree
 MERGE_IDENTICAL = 88    # near-identical wire copy, no anchors needed
 MERGE_BY_ANCHOR = 28    # different words, same company and same amount
+MERGE_BY_ACTION = 40    # same company, same kind of corporate action
+MERGE_BY_TOPIC = 40     # same company plus shared subject matter
+MERGE_TOPIC_TOKENS = 2  # shared words BESIDES the shared name
+
+# Outlets describe one corporate event with different verbs: one writes
+# "Acquires", another "Buys", a third "Snaps Up". Without this, a cross-outlet
+# duplicate survives whenever no price is quoted, because the money-anchor path
+# below needs a figure to fire. That is how Lauren received the THE-TEAM
+# acquisition twice on 6 October.
+ACTION_CLASSES = {
+    "acquisition": """acquires acquire acquired acquiring acquisition buys buy
+        bought purchase purchased takeover snaps absorbs absorbed""".split(),
+    "launch": """launches launch launched launching unveils unveiled debuts
+        debuted introduces introduced opens opened rolls""".split(),
+    "funding": """raises raise raised funding funds raising invests invested
+        investment backs backed valuation round""".split(),
+    "hire": """hires hired hiring names named appoints appointed promotes
+        promoted taps tapped elevates elevated""".split(),
+    "exit": """exits exit departs departed leaves left steps resigns resigned
+        ousted out""".split(),
+    "partnership": """partners partnered partnership teams joins joined
+        collaborates collaboration signs signed inks inked""".split(),
+    "sale": """sells sell sold sale divests divested spins spun offloads""".split(),
+    "shutdown": """shuts shut closes closed ends ended halts halted kills
+        killed cancels cancelled discontinues""".split(),
+}
+_ACTION_BY_WORD = {
+    word: name for name, words in ACTION_CLASSES.items() for word in words
+}
+
+
+def action_class(title: str) -> str | None:
+    """Which kind of corporate event this headline describes, if any.
+
+    First match wins on word order, because a headline leads with its verb.
+    """
+    for word in WORD.findall(title.casefold()):
+        found = _ACTION_BY_WORD.get(word) or _ACTION_BY_WORD.get(_stem(word))
+        if found:
+            return found
+    return None
 
 # "Fewer strong stories is better than a full list with weak/stale items.
 # Thin-flow honesty beats filler." Widening the relevance gate to hit the 7-10
@@ -121,9 +201,9 @@ def canon_tokens(title: str) -> tuple[frozenset[str], frozenset[str]]:
     failure that reads like a feature. Differing anchors block that.
     """
     stripped = normalise_money(PUBLISHER_TAIL.sub("", title.strip()))
+    stripped = DOTTED.sub(lambda m: m.group(0).replace(".", ""), stripped)
     normalized = unicodedata.normalize("NFKD", stripped)
     raw = WORD.findall(normalized)
-    title_case = sum(1 for word in raw if word[:1].isupper()) > max(1, len(raw) * 6 // 10)
 
     tokens: set[str] = set()
     anchors: set[str] = set()
@@ -139,7 +219,12 @@ def canon_tokens(title: str) -> tuple[frozenset[str], frozenset[str]]:
         tokens.add(stemmed)
         if lowered in ANCHOR_VOCAB or stemmed in ANCHOR_VOCAB:
             anchors.add(stemmed)
-        elif not title_case and index > 0 and word[:1].isupper() and len(word) >= 4:
+        # A capitalised token that is not a common headline word is a name.
+        # This now applies in Title Case headlines too, which is where the
+        # old title-case veto left trade copy with no anchors whatsoever.
+        elif (word[:1].isupper() and lowered not in HEADLINE_COMMON
+                and stemmed not in HEADLINE_COMMON
+                and (len(word) >= 3 or word.isupper())):
             anchors.add(stemmed)
     return frozenset(tokens), frozenset(anchors)
 
@@ -172,15 +257,40 @@ def _hard(anchors: frozenset[str]) -> frozenset[str]:
     return frozenset(a for a in anchors if MONEY.match(a) or any(ch.isdigit() for ch in a))
 
 
-def should_merge(score: int, anchors_a: frozenset[str], anchors_b: frozenset[str]) -> bool:
+def should_merge(score: int, anchors_a: frozenset[str], anchors_b: frozenset[str],
+                 action_a: str | None = None, action_b: str | None = None,
+                 tokens_a: frozenset[str] = frozenset(),
+                 tokens_b: frozenset[str] = frozenset()) -> bool:
     if score >= MERGE_IDENTICAL:
+        return True
+    shared_names = anchors_a & anchors_b
+    # Same named entity, same kind of corporate action, and enough word overlap
+    # to be about one event rather than two on the same day. All three are
+    # required: "Spotify Acquires Wondery" and "Spotify Buys Megaphone" share a
+    # name and an action class and must NOT merge, which the score bar blocks.
+    if (shared_names and action_a is not None and action_a == action_b
+            and score >= MERGE_BY_ACTION):
+        return True
+    # A commentary headline carries no verb to classify. "TikTok Expands
+    # Off-Platform Ad Network to U.S. Advertisers, Adds AI Campaign Tools" and
+    # "TikTok's ad network bet: More reach, more budget" are one announcement,
+    # and neither the action path nor the strict threshold reaches them.
+    #
+    # The subject matter has to be shared, not just the company. Two stories
+    # about the same company on the same day overlap on the company ALONE:
+    # "Spotify Acquires Wondery" and "Spotify Buys Megaphone" share `spotify`
+    # and nothing else, so counting shared words BESIDES the name is what
+    # separates one event from two.
+    shared_subject = (tokens_a & tokens_b) - shared_names
+    if (shared_names and score >= MERGE_BY_TOPIC
+            and len(shared_subject) >= MERGE_TOPIC_TOKENS):
         return True
     # Two outlets can describe one event in almost no shared words. "Judge Casts
     # Doubt on TikTok's $400 Million Privacy Deal" and "U.S. Judge Signals
     # Rejection of Key Piece in TikTok's $400M Privacy Settlement" overlap on
     # barely a fifth of their tokens. What they do share is the company and the
     # amount, and a named company plus a specific figure is not a coincidence.
-    shared = anchors_a & anchors_b
+    shared = shared_names
     if len(shared) >= 2 and _hard(shared) and score >= MERGE_BY_ANCHOR:
         return True
     if score < MERGE_ANCHORED:
@@ -200,6 +310,9 @@ class Cluster:
     members: list[Story] = dataclasses.field(default_factory=list)
     tokens: frozenset[str] = frozenset()
     anchors: frozenset[str] = frozenset()
+    # Which kind of corporate event the leader describes, so an outlet writing
+    # "Buys" can be matched to one writing "Acquires".
+    action: str | None = None
     score: int = 0
     # Integer hours, set at selection. The analyst is given this instead of a
     # timestamp so it cannot reason about -- or invent -- dates.
@@ -270,12 +383,15 @@ def build_clusters(stories: list[Story]) -> list[Cluster]:
     clusters: list[Cluster] = []
     for story in ordered:
         tokens, anchors = canon_tokens(story.title)
+        action = action_class(story.title)
         for cluster in clusters:
-            if should_merge(similarity(tokens, cluster.tokens), anchors, cluster.anchors):
+            if should_merge(similarity(tokens, cluster.tokens), anchors, cluster.anchors,
+                            action, cluster.action, tokens, cluster.tokens):
                 cluster.members.append(story)
                 break
         else:
-            clusters.append(Cluster(leader=story, members=[story], tokens=tokens, anchors=anchors))
+            clusters.append(Cluster(leader=story, members=[story], tokens=tokens,
+                                    anchors=anchors, action=action))
     return clusters
 
 
