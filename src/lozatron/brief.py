@@ -77,19 +77,17 @@ class Brief:
     commentary: dict[str, int] = dataclasses.field(default_factory=dict)
     patterns: list[str] = dataclasses.field(default_factory=list)
 
-    # Triage only. Flagging most of the brief is not triage, and the model
-    # flagged two of three stories on the first live edition, which turned the
-    # section into a second copy of the brief above the brief. If it flags at
-    # least half, the flag carried no information that edition and the section
-    # is dropped; otherwise it is capped.
-    MAX_DECISIONS = 3
-
-    @property
-    def decisions(self) -> list[Entry]:
-        flagged = [entry for entry in self.entries if entry.needs_decision]
-        if not flagged or len(flagged) * 2 >= len(self.entries):
-            return []
-        return flagged[: self.MAX_DECISIONS]
+    # The "Needs your call" section is gone.
+    #
+    # It was an index: a clipped headline and a number pointing down at a
+    # story a few screens below. Krish's verdict on seeing it in a real
+    # edition was that it "doesn't really make sense at all", and he is right
+    # for a reason worth writing down. It asked her to make a call without
+    # ever saying what the call was, and it pointed at something already in
+    # front of her. An index into a four-item list is not triage.
+    #
+    # The flag itself survives on the story, where it can say something,
+    # rather than as a block above the brief restating it.
 
     @property
     def analysed(self) -> bool:

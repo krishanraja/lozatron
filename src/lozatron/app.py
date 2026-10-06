@@ -211,6 +211,12 @@ def run(
         for item in find_patterns(social, commentary)
     ]
 
+    # Resolved before the analyst, because the feedback buttons in the
+    # rendered brief carry it. It used to be assigned after rendering, which
+    # was fine until compose needed it and then raised UnboundLocalError on
+    # the live-analyst path -- a path no local run reaches without an API key.
+    edition = edition_id(mode, slot, now)
+
     # The analyst scores and explains within the gated set. It never adds a
     # story, never reorders, and never decides how many ship.
     analysis, analysis_reason = (None, "off")
@@ -259,7 +265,6 @@ def run(
             subject, text_body, html_body = render_email(mode, selected, now)
     else:
         subject, text_body, html_body = render_email(mode, selected, now)
-    edition = edition_id(mode, slot, now)
     sent = False
     message_id = ""
     # A briefing with nothing in it used to still send "No qualifying new

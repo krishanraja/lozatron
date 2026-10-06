@@ -144,15 +144,6 @@ def render_text(brief: Brief) -> str:
         lines += [f"[Analysis unavailable for this edition: {brief.degraded}]", ""]
     if brief.lede:
         lines += [brief.lede, ""]
-    if brief.decisions:
-        # An index pointing down at the numbered stories, matching the HTML.
-        # It used to repeat each story's "why it matters" in full, so the top
-        # of the email was the brief twice over.
-        positions = {id(entry): number for number, entry in enumerate(brief.entries, 1)}
-        lines += ["NEEDS YOUR CALL", ""]
-        for entry in brief.decisions:
-            lines.append(f"  {positions[id(entry)]:02d}  {entry.title}")
-        lines.append("")
     for index, entry in enumerate(brief.entries, 1):
         lines.append(f"{index}. {entry.title}")
         corroboration = f" ({entry.corroboration} outlets)" if entry.corroboration > 3 else ""
@@ -249,19 +240,31 @@ def _signal_url(brief: Brief, action: str, entry: Entry | None = None) -> str:
 
 
 def _verdicts(brief: Brief, entry: Entry) -> str:
-    """Her verdict sits where she just finished reading, not in a footer."""
+    """Her verdict sits where she just finished reading, not in a footer.
+
+    Rendered as bordered buttons rather than text links. The first version
+    used muted 13px underlined text and Krish's reaction on seeing the real
+    email was "there's no feedback capability in here" -- which is the
+    correct verdict on a control that does not announce it can be touched.
+    44px tall so it is a thumb target on a phone.
+    """
     if not brief.edition_id:
         return ""
-    more = _signal_url(brief, "more", entry)
-    less = _signal_url(brief, "less", entry)
+
+    def pill(label: str, action: str) -> str:
+        href = _signal_url(brief, action, entry)
+        return (
+            f'<a href="{_t(href, 900)}" '
+            f'style="display:inline-block;padding:11px 18px;margin:0 8px 8px 0;'
+            f'border:1px solid {RULE};border-radius:999px;background:#ffffff;'
+            f'color:{INK};font-family:{SANS};font-size:14px;line-height:1.2;'
+            f'font-weight:600;text-decoration:none;">{label}</a>'
+        )
+
     return (
-        f'<p style="margin:10px 0 0;font-family:{MONO};font-size:13px;line-height:1.5;'
-        f'color:{MUTED};">'
-        f'<a href="{_t(more, 900)}" style="color:{MUTED};text-decoration:underline;'
-        f'text-underline-offset:3px;">More like this</a>'
-        f'&nbsp;&nbsp;&middot;&nbsp;&nbsp;'
-        f'<a href="{_t(less, 900)}" style="color:{MUTED};text-decoration:underline;'
-        f'text-underline-offset:3px;">Not for me</a></p>'
+        f'<p style="margin:16px 0 0;">'
+        f'{pill("&#43; More like this", "more")}{pill("&#8722; Not for me", "less")}'
+        f'</p>'
     )
 
 
@@ -274,10 +277,14 @@ def _ask_block(brief: Brief) -> str:
         f'<tr><td style="padding:10px 0 30px;">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
         f'<tbody><tr><td style="padding:18px 20px;background:#f3efe7;border-radius:4px;">'
-        f'<p style="margin:0 0 6px;font-size:16px;line-height:1.45;color:{INK};font-weight:600;">'
-        f'<a href="{_t(href, 900)}" style="color:{LINK};text-decoration:underline;'
-        f'text-underline-offset:3px;">Tell Lozatron what to chase &rarr;</a></p>'
-        f'<p style="margin:0;font-size:14px;line-height:1.5;color:{MUTED};">'
+        f'<p style="margin:0 0 14px;font-size:15px;line-height:1.5;color:{INK};">'
+        f'Want something chased, dropped, or covered differently? Tell it directly.</p>'
+        f'<a href="{_t(href, 900)}" '
+        f'style="display:inline-block;padding:13px 22px;border-radius:999px;'
+        f'background:{INK};color:{PAPER};font-family:{SANS};font-size:15px;'
+        f'line-height:1.2;font-weight:600;text-decoration:none;">'
+        f'Tell Lozatron what to chase</a>'
+        f'<p style="margin:12px 0 0;font-size:13px;line-height:1.5;color:{MUTED};">'
         f'Goes straight to the system. Nobody reads it first.</p>'
         f'</td></tr></tbody></table></td></tr>'
     )
@@ -360,25 +367,6 @@ def render_html(brief: Brief) -> str:
         rows.append(
             f'<tr><td style="padding:0 0 30px;"><p style="margin:0;font-size:18px;line-height:1.55;'
             f'color:{INK};">{_t(brief.lede)}</p></td></tr>'
-        )
-
-    if brief.decisions:
-        # An index, not a repeat. Numbered so it points down at the story rather
-        # than restating it directly above itself, which read as a defect.
-        positions = {id(entry): number for number, entry in enumerate(brief.entries, 1)}
-        items = "".join(
-            f'<p style="margin:0 0 6px;font-size:15px;line-height:1.45;color:{INK};">'
-            f'<span style="font-family:{MONO};font-size:12px;color:{FLAG};">'
-            f'{positions[id(entry)]:02d}</span>&nbsp;&nbsp;{_t(_clip(entry.title, 64))}</p>'
-            for entry in brief.decisions
-        )
-        rows.append(
-            f'<tr><td style="padding:0 0 30px;">'
-            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tbody><tr>'
-            f'<td style="padding:16px 18px;background:#f7f2e8;border-radius:4px;">'
-            f'<p style="margin:0 0 10px;font-family:{MONO};font-size:12px;letter-spacing:.08em;'
-            f'text-transform:uppercase;color:{FLAG};">Needs your call</p>{items}'
-            f'</td></tr></tbody></table></td></tr>'
         )
 
     for index, entry in enumerate(brief.entries, 1):

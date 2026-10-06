@@ -154,15 +154,6 @@ def test_corroboration_count_appears_once_the_outlet_list_collapses():
     assert "4 outlets" in markup
 
 
-def test_needs_your_call_indexes_rather_than_duplicates():
-    rows = [entry(), entry(title="Second story about creator payouts", needs_decision=True),
-            entry(title="Third story")]
-    markup = render_html(brief(rows))
-    assert "Needs your call" in markup
-    # The index points at story 02 rather than restating it as a third copy.
-    assert markup.count("Second story about creator payouts") == 2
-
-
 def test_empty_brief_still_renders_valid_shape():
     subj, text, markup = render(brief([]))
     assert subj
@@ -223,48 +214,14 @@ def test_full_render_carries_no_literal_entities():
     assert "Patreon’s new tier launched" in markup
 
 
-def test_decision_index_is_one_line_not_a_repeat():
-    """Sitting directly above its own story, a full headline reads as a bug."""
-    long_title = ("'Hot Ones' Producer First We Feast Sets New Series "
-                  "'Hot Ones: Game Night' Hosted by Joe Santagato (EXCLUSIVE)")
-    rows = [entry(title=long_title, needs_decision=True), entry(title="Filler one"),
-            entry(title="Filler two")]
-    markup = render_html(brief(rows))
-    assert "…" in markup
-    # The full headline appears once, in the story itself, not twice.
-    assert markup.count("Joe Santagato") == 1
-
-
-def test_the_decision_section_is_dropped_when_it_flags_half_the_brief():
-    """Flagging most of the brief is not triage.
-
-    On the first live edition the model flagged two of three stories, which put
-    a copy of most of the brief above the brief. If the flag does not
-    discriminate that edition, it carried no information and is dropped.
-    """
-    rows = [entry(title="One", needs_decision=True),
-            entry(title="Two", needs_decision=True),
-            entry(title="Three")]
-    assert brief(rows).decisions == []
-
-
-def test_the_decision_section_survives_when_it_actually_discriminates():
+def test_the_needs_your_call_section_is_gone():
+    """It asked her to make a call without saying what the call was, and
+    pointed at a story already in front of her. An index into a four-item
+    list is not triage."""
     rows = [entry(title="One", needs_decision=True), entry(title="Two"),
             entry(title="Three")]
-    assert [item.title for item in brief(rows).decisions] == ["One"]
-
-
-def test_the_decision_section_is_capped():
-    from lozatron.brief import Brief
-    rows = [entry(title=f"Flagged {i}", needs_decision=True) for i in range(4)]
-    rows += [entry(title=f"Plain {i}") for i in range(6)]
-    assert len(brief(rows).decisions) == Brief.MAX_DECISIONS
-
-
-def test_plain_text_decision_index_does_not_repeat_the_analysis():
-    rows = [entry(title="One", needs_decision=True, why_it_matters="A very distinctive clause."),
-            entry(title="Two"), entry(title="Three")]
-    _, text, _ = render(brief(rows))
-    assert "NEEDS YOUR CALL" in text
-    # Once in the story body, never in the index above it.
-    assert text.count("A very distinctive clause.") == 1
+    doc = brief(rows)
+    _, text, markup = render(doc)
+    assert "Needs your call" not in markup
+    assert "NEEDS YOUR CALL" not in text
+    assert not hasattr(doc, "decisions")
