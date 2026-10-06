@@ -421,6 +421,48 @@ def compare(mode: str, state_path: Path) -> dict[str, object]:
     }
 
 
+def learn(profile_path: Path, *, days: int = 30) -> dict[str, object]:
+    """Fold Lauren's button feedback into the committed ranking profile.
+
+    Sends nothing and reads no sources. It is deliberately a separate entry
+    point from `run`: a brief must never fail because the learning loop could
+    not reach Supabase, and a learning run must never be able to send an
+    email. Keeping them apart is what makes that true by construction rather
+    than by care.
+
+    Writes the profile only when something actually changed, so a quiet week
+    leaves no commit and the git history stays a record of real movement.
+    """
+    from . import profile as profile_mod
+
+    now = utcnow()
+    # `store.signals` already swallows its own failures, so this is belt and
+    # braces rather than duplication: the rule is that learning never breaks
+    # delivery, and a transient Supabase blip should leave the profile alone
+    # and say why, not turn the loop red and leave somebody guessing. The
+    # reason is reported so a run that quietly learned nothing is still
+    # distinguishable from a quiet week.
+    read_error = ""
+    try:
+        signals = store.signals(days=days)
+    except Exception as exc:  # noqa: BLE001
+        signals = []
+        read_error = f"{type(exc).__name__}"
+    learned = profile_mod.Profile(profile_path).load()
+    report = learned.learn(signals, now=now)
+    changed = bool(report.get("changed"))
+    if changed:
+        learned.save()
+    return {
+        "profile": str(profile_path),
+        "window_days": days,
+        "wrote_profile": changed,
+        "weights_now": len(learned.weights),
+        "read_error": read_error,
+        **report,
+    }
+
+
 def preview(mode: str, state_path: Path) -> dict[str, object]:
     """Render a real brief and send it to the ops address only.
 
@@ -515,6 +557,10 @@ def main() -> int:
                         help="Email the weekly Apify spend report to the ops address")
     parser.add_argument("--compare", action="store_true",
                         help="Print clustered vs unclustered selection; sends nothing")
+    parser.add_argument("--learn", action="store_true",
+                        help="Fold Lauren's button feedback into state/profile.json")
+    parser.add_argument("--profile", type=Path, default=Path("state/profile.json"))
+    parser.add_argument("--signal-days", type=int, default=30)
     args = parser.parse_args()
 
     if args.verify_credentials:
@@ -568,6 +614,16 @@ def main() -> int:
 
     if args.compare:
         print(json.dumps(compare(args.mode, args.state), indent=2, default=str))
+        return 0
+
+    if args.learn:
+        result = learn(args.profile, days=args.signal_days)
+        output = json.dumps(result, indent=2, default=str)
+        print(output)
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as handle:
+                handle.write(f"## Lozatron learning\n\n```json\n{output}\n```\n")
         return 0
 
     # Scheduled briefings go through the slot gate; a manual dispatch always

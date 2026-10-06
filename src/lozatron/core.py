@@ -761,7 +761,35 @@ def relevance(story: Story) -> int:
     score += 2 if core.search(story.title) else 0
     # Creators doing business outrank infrastructure news about them.
     score += creator_first_bonus(story)
+    # Lauren's taps, as a bounded nudge. Clamped to +/-profile.MAX_TOTAL so it
+    # can reorder the brief and move a marginal story across the floor, but
+    # cannot dominate a score that otherwise runs 4 to 12, and no volume of
+    # feedback can drive a story to zero. See profile.py for why this is
+    # bounded-and-automatic rather than gated behind a pull request.
+    score += _profile().bonus(story.title)
     return score
+
+
+_PROFILE_CACHE: list = []
+
+
+def _profile():
+    """The learned profile, read once per process.
+
+    Cached because `relevance` is called for every story in a pool of several
+    hundred, and re-reading the file each time would turn ranking into a few
+    hundred stat calls for no gain.
+    """
+    if not _PROFILE_CACHE:
+        from .profile import Profile
+        path = Path(os.environ.get("LOZ_PROFILE_PATH", "state/profile.json"))
+        _PROFILE_CACHE.append(Profile(path).load())
+    return _PROFILE_CACHE[0]
+
+
+def reset_profile_cache() -> None:
+    """For tests, and for a process that rewrites the profile mid-run."""
+    _PROFILE_CACHE.clear()
 
 
 def recency_bonus(story: Story, now: dt.datetime) -> int:

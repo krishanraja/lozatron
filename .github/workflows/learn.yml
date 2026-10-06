@@ -1,0 +1,93 @@
+name: Lozatron learning
+
+# Folds Lauren's button feedback into state/profile.json, which nudges
+# relevance on the next brief.
+#
+# WHY 05:40 UTC. That is 01:40 Eastern: after the day's taps have landed and
+# several hours before the 09:00 ET brief reads the profile. Running it just
+# before the brief would race the delivery workflow for the same commit, and
+# losing that race means either a failed push or a brief that ranks on a
+# profile it then overwrites. Minute 40 rather than 0 because the top of the
+# hour is when every cron on GitHub fires and the queue is slowest.
+#
+# WHY IT CANNOT HARM A BRIEF. It is a separate entry point that reads no
+# sources and sends no email -- `lozatron --learn` cannot reach `gmail.send`.
+# If Supabase is unreachable, `store.signals` returns an empty list, the loop
+# changes nothing, and the brief ranks on the existing profile. There is no
+# path from a failure here to a missing or broken brief.
+#
+# WHY IT IS SAFE TO RUN UNATTENDED. Weights are clamped to +/-2 each and
+# +/-3 in total against a base score that runs 4 to 12, a term moves one step
+# per run, and a term needs four signals behind it before it moves at all. The
+# profile is committed, so every change is a diff in git history attributable
+# to the run that made it, and a bad week is `git revert`. See
+# src/lozatron/profile.py for the full reasoning.
+
+on:
+  schedule:
+    - cron: "40 5 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Compute the profile change without committing it
+        required: true
+        default: false
+        type: boolean
+      signal_days:
+        description: How many days of feedback to read
+        required: false
+        default: "30"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  # Shares the delivery group on purpose. The learner commits to the same
+  # branch as the brief's state push, and two jobs racing that commit is how a
+  # dedup ledger gets lost.
+  group: lozatron-delivery
+  cancel-in-progress: false
+
+jobs:
+  learn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e . pytest
+      - name: Test
+        run: pytest -q
+      - name: Learn
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        timeout-minutes: 5
+        run: lozatron --learn --signal-days "${{ inputs.signal_days || '30' }}"
+      - name: Commit the profile
+        if: ${{ github.event_name == 'schedule' || inputs.dry_run == false }}
+        run: |
+          if git diff --quiet -- state/profile.json; then
+            echo "No profile change; nothing to commit." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "lozatron[bot]"
+          git config user.email "lozatron-bot@users.noreply.github.com"
+          git add state/profile.json
+          git commit -m "profile: learn from Lauren's button feedback"
+          # The profile is the audit trail, so losing the push loses the
+          # explanation for how the brief is ranked. Rebase onto whatever the
+          # delivery workflow landed meanwhile and retry before failing.
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
+            sleep $((attempt * 5))
+          done
+          echo "::error title=PROFILE NOT PUSHED::Learned a profile change but could not push it."
+          exit 1

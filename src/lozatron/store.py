@@ -117,3 +117,60 @@ def recent(days: int = 14, limit: int = 60) -> list[dict[str, Any]]:
                 for row in rows if isinstance(row, dict)]
     except Exception:  # noqa: BLE001
         return []
+
+
+def signals(days: int = 30) -> list[dict[str, Any]]:
+    """Lauren's button feedback, for the learning loop. Empty on any failure.
+
+    Read through `public.loz_recent_signals`, a SECURITY DEFINER function,
+    rather than over REST: the `lozatron` schema is deliberately not exposed,
+    because widening this project's exposed schema list would put a private
+    schema on a public surface, and an anon key here reaches mind/make OS
+    tables. The write path uses the same pattern.
+
+    The function returns no notes and no user agent. The loop needs the verdict
+    and the headline it was cast on; her free-text notes are hers, and this
+    runs in GitHub Actions where anything read risks reaching a public repo's
+    run log.
+    """
+    from .core import env_text
+
+    # Credentials only, deliberately not `configured()`. That helper also
+    # requires LOZ_ARCHIVE, which gates whether briefs are archived -- a
+    # separate decision from whether Lauren's feedback is read. Reusing it here
+    # made the loop silently read nothing, which is how this was found.
+    key = env_text("SUPABASE_SERVICE_ROLE_KEY")
+    base = env_text("SUPABASE_URL").rstrip("/")
+    if not (key and base):
+        return []
+    try:
+        rows = http.request_json(
+            f"{base}/rest/v1/rpc/loz_recent_signals",
+            method="POST",
+            data=json.dumps({"p_days": int(days)}).encode(),
+            # Plain headers, with no Accept-Profile. `_headers` points
+            # PostgREST at the `lozatron` schema, which is right for the
+            # archive tables and wrong here: this RPC lives in `public`,
+            # precisely so the private schema stays unexposed. Sending the
+            # profile header asked for a function that is not there.
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            timeout=20,
+            retries=1,
+        )
+    except Exception:  # noqa: BLE001 - learning never breaks delivery
+        return []
+    if not isinstance(rows, list):
+        return []
+    return [
+        {
+            "action": str(row.get("action", "")),
+            "story_title": str(row.get("story_title", "") or ""),
+            "cluster_key": row.get("cluster_key"),
+        }
+        for row in rows
+        if isinstance(row, dict)
+    ]

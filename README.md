@@ -141,6 +141,38 @@ cancelled seconds after the send had already completed, and the cancellation
 was reported as having stopped it. Read the recipient list on the sent message,
 not the run's status.
 
+## How the brief learns
+
+`learn.yml` runs at 05:40 UTC daily (01:40 ET): after the day's taps have
+landed, hours before the 09:00 ET brief reads the result. It folds Lauren's
+"More like this" and "Not for me" taps into `state/profile.json`, which nudges
+`core.relevance`.
+
+It applies automatically, with no pull request. That reverses an earlier
+decision in this repo's plan, and the reversal is only defensible because the
+loop cannot drift far or invisibly:
+
+- Each weight is clamped to ±2, and the total adjustment to any one story to
+  ±3, against a base relevance that runs 4 to 12. The profile reorders the
+  brief and can move a marginal story across the floor. It cannot dominate the
+  score, and no volume of feedback drives a story to zero.
+- A term moves one step per run, so one afternoon of tapping cannot reshape
+  the brief.
+- A term needs four signals behind it before it moves at all. One tap is an
+  accident. Below the threshold the loop does nothing, which is the correct
+  output of a quiet week.
+- The profile is committed, so every change is a diff attributable to the run
+  that made it, and a bad week is `git revert`.
+- It never touches the mechanics track. A few taps on essays would otherwise
+  delete a section of the product; whether mechanics earns its place is a
+  judgement for a person.
+- It learns only from `more` and `less`. `keep` is a bookmark, and `ask` is a
+  sourcing request rather than a ranking one.
+
+`lozatron --learn` reads no sources and cannot reach `gmail.send`, so a
+learning failure can never produce a missing or broken brief. On an
+unreachable Supabase it reports `read_error` and leaves the profile alone.
+
 ## The kill switch
 
 `READER_DELIVERY_ENABLED` in `src/lozatron/gmail.py` decides whether the brief
