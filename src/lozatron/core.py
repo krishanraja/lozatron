@@ -61,6 +61,24 @@ STRONG_TERMS = (
 )
 
 
+# The edition id format, which is a CONTRACT between two codebases.
+#
+# `app.edition_id` produces it and the loz-signal edge function validates it
+# before accepting a feedback signal. They were written separately and
+# immediately disagreed: the function accepted only the slot form
+# `2026-10-06T09-briefing`, while any run without a slot, which is every
+# forced or manual run, produces the timestamp form
+# `2026-10-06T163621Z-briefing`. The buttons on a manually sent edition were
+# therefore dead on arrival.
+#
+# Keeping the pattern here, with a test that every form `edition_id` can emit
+# matches it, is what stops that drifting again. The TypeScript copy in
+# supabase/functions/loz-signal/index.ts must mirror this.
+EDITION_ID_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T(?:\d{2,4}|\d{6}Z)-(?:briefing|breaking)$"
+)
+
+
 # Sites that republish other outlets' work. On 6 October the brief told Lauren
 # an agency-fees story was carried by "Digiday and Biztoc.com", which reads as
 # two independent outlets confirming each other. Biztoc is a scraper

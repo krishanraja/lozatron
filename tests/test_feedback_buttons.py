@@ -129,3 +129,30 @@ def test_compose_threads_the_edition_and_cluster_key_through():
                   edition_id=EDITION)
     assert doc.edition_id == EDITION
     assert doc.entries[0].cluster_key == "cl_xyz789"
+
+
+# --- the edition id contract, across two codebases ---
+
+def test_every_edition_id_form_is_accepted_by_the_endpoint():
+    """The bug this pins: the endpoint accepted only the slot form, but every
+    forced or manual run emits the timestamp form, so the buttons on a
+    manually sent edition were dead on arrival. The TypeScript validator in
+    supabase/functions/loz-signal/index.ts mirrors EDITION_ID_RE."""
+    from lozatron.app import edition_id
+    from lozatron.core import EDITION_ID_RE
+    moment = dt.datetime(2026, 10, 6, 16, 36, 21, tzinfo=UTC)
+    forms = [
+        edition_id("briefing", "2026-10-06T09", moment),
+        edition_id("briefing", None, moment),
+        edition_id("breaking", None, moment),
+        edition_id("breaking", "2026-10-06T0906", moment),
+    ]
+    for value in forms:
+        assert EDITION_ID_RE.match(value), value
+
+
+def test_the_pattern_rejects_junk():
+    from lozatron.core import EDITION_ID_RE
+    for bad in ("nonsense", "2026-10-06-briefing", "2026-10-06T09-other",
+                "../../etc/passwd", "2026-10-06T09-briefing' or 1=1"):
+        assert not EDITION_ID_RE.match(bad), bad

@@ -32,8 +32,13 @@ const ACTIONS: Record<string, { label: string; sent: string }> = {
   ask: { label: "Chase this", sent: "On it. That goes into the next brief's sourcing." },
 };
 
-// 2026-10-06T09-briefing, or 2026-10-06T0906-briefing for an off-slot run.
-const EDITION = /^\d{4}-\d{2}-\d{2}T\d{2,4}-(briefing|breaking)$/;
+// MIRRORS core.EDITION_ID_RE. Keep the two in step.
+//
+// Two forms, because app.edition_id emits two. Slot runs produce
+// `2026-10-06T09-briefing`; any run without a slot, which is every forced or
+// manual run, produces `2026-10-06T163621Z-briefing`. This accepted only the
+// first, so the buttons on a manually sent edition were dead on arrival.
+const EDITION = /^\d{4}-\d{2}-\d{2}T(?:\d{2,4}|\d{6}Z)-(briefing|breaking)$/;
 const RETAIN_DAYS = 45;
 
 function editionAcceptable(id: string): boolean {
