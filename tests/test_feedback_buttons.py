@@ -55,10 +55,19 @@ def test_each_story_carries_both_verdicts():
     assert "more" in actions and "less" in actions
 
 
-def test_the_edition_carries_a_request_link():
+def test_the_brief_makes_no_promise_it_cannot_keep():
+    """No free-text invitation until a host will serve the form.
+
+    The brief used to carry a "Tell Lozatron what to chase" button pointing at
+    a one-tap endpoint that could record no text at all. Supabase serves this
+    project's responses as text/plain with a sandbox CSP whatever the function
+    sets, so the form cannot render there and the invitation had nothing
+    behind it. This asserts the invitation stays out until the page at
+    web/api/index.js is hosted and LOZ_SIGNAL_URL points at it.
+    """
     markup = render_html(brief())
-    assert "ask" in {urllib.parse.parse_qs(u.query)["a"][0] for u in links(markup)}
-    assert "Tell Lozatron what to chase" in markup
+    assert "Tell Lozatron what to chase" not in markup
+    assert "ask" not in {urllib.parse.parse_qs(u.query)["a"][0] for u in links(markup)}
 
 
 def test_a_verdict_identifies_the_story_not_just_the_edition():
@@ -89,13 +98,12 @@ def test_an_edition_without_an_id_gets_no_buttons():
     """A preview or a test render must not emit links that cannot be honoured."""
     markup = render_html(brief(edition=""))
     assert not links(markup)
-    assert "Tell Lozatron what to chase" not in markup
 
 
 def test_the_plain_text_twin_carries_them_too():
     _, text, _ = render(brief())
     assert "More like this:" in text
-    assert "TELL LOZATRON WHAT TO CHASE" in text
+    assert "TELL LOZATRON WHAT TO CHASE" not in text
 
 
 def test_the_default_endpoint_is_the_deployed_one():

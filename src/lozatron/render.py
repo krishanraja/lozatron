@@ -162,10 +162,6 @@ def render_text(brief: Brief) -> str:
             lines.append(f"   More like this: {_signal_url(brief, 'more', entry)}")
             lines.append(f"   Not for me:     {_signal_url(brief, 'less', entry)}")
         lines.append("")
-    if brief.edition_id:
-        lines += ["TELL LOZATRON WHAT TO CHASE",
-                  f"  {_signal_url(brief, 'ask')}",
-                  "  Goes straight to the system. Nobody reads it first.", ""]
     if brief.patterns:
         lines += ["BEING DISCUSSED (unconfirmed)", ""]
         lines += [f"  {line}" for line in brief.patterns]
@@ -269,25 +265,23 @@ def _verdicts(brief: Brief, entry: Entry) -> str:
 
 
 def _ask_block(brief: Brief) -> str:
-    """The request half. She said she wanted to push it for stories."""
-    if not brief.edition_id:
-        return ""
-    href = _signal_url(brief, "ask")
-    return (
-        f'<tr><td style="padding:10px 0 30px;">'
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
-        f'<tbody><tr><td style="padding:18px 20px;background:#f3efe7;border-radius:4px;">'
-        f'<p style="margin:0 0 14px;font-size:15px;line-height:1.5;color:{INK};">'
-        f'Want something chased, dropped, or covered differently? Tell it directly.</p>'
-        f'<a href="{_t(href, 900)}" '
-        f'style="display:inline-block;padding:13px 22px;border-radius:999px;'
-        f'background:{INK};color:{PAPER};font-family:{SANS};font-size:15px;'
-        f'line-height:1.2;font-weight:600;text-decoration:none;">'
-        f'Tell Lozatron what to chase</a>'
-        f'<p style="margin:12px 0 0;font-size:13px;line-height:1.5;color:{MUTED};">'
-        f'Goes straight to the system. Nobody reads it first.</p>'
-        f'</td></tr></tbody></table></td></tr>'
-    )
+    """Parked, deliberately, until the feedback page has a host.
+
+    She asked to push the system for stories, which needs free text, which
+    needs a form, which needs a host that will serve HTML. Supabase will not:
+    it serves every response from this project as text/plain with a sandbox
+    CSP, whatever the function sets, verified against both Edge Functions and
+    Storage. The page is written at web/api/index.js and one variable,
+    LOZ_SIGNAL_URL, repoints these buttons at it.
+
+    Until then this returns nothing. The block it used to render invited her to
+    "tell it directly" and led to a one-tap endpoint that could record no text
+    at all -- a promise the product could not keep. The per-story verdict
+    pills do work and are unaffected. Shipping a section that does not make
+    sense is the specific thing Krish has corrected twice in this build, so
+    the honest state is no section.
+    """
+    return ""
 
 
 def _story(entry: Entry, index: int, brief: Brief | None = None) -> str:

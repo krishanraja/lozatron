@@ -627,6 +627,118 @@ def freshness_tier(story: Story, now: dt.datetime) -> str:
     return "stale"
 
 
+# --- creator-first scoring ------------------------------------------------
+#
+# Lauren, 6 October, on an edition of agency M&A, a marketplace and an ad
+# network: "it's definitely less creator first. can you tell it to provide
+# more creator business-related news?"
+#
+# She was right, and the cause was mechanical rather than a sourcing problem.
+# `relevance` scored 2 points per STRONG_TERMS hit, and STRONG_TERMS is
+# essentially a list of M&A verbs. So "Social Agency SAMY Buys Influencer Shop
+# Get Engaged" scored 5 on the word "Buys" and shipped, while "Dhar Mann's
+# $100M AWNY deal target for creators" scored 3, under the floor of 4, and was
+# rejected outright. A hundred-million-dollar creator fund lost to an agency
+# buying an agency because of a verb.
+#
+# Her preference brief asks for exactly what was being filtered out: "Show
+# named creators making concrete business moves, not only platform or agency
+# news", and a commercial angle built on "revenue models, deal economics,
+# equity versus fee structures, creator-as-company dynamics".
+
+# "Influencer Matilda Djerf", "YouTuber X", "Athlete Y". The role word in
+# front of a name is the least ambiguous signal that a person, not a company,
+# is the subject.
+# The role word is matched case-insensitively, the name is not. The scoped
+# `(?i:...)` group is load-bearing and the two halves must not be merged: a
+# headline capitalises its first word, which is where the role almost always
+# sits, so a wholly case-sensitive pattern missed "YouTuber Dhar Mann" while
+# matching a mid-sentence "youtuber Dhar Mann" -- it silently scored the rarer
+# half of the cases. Making the whole pattern case-insensitive instead would
+# drop the [A-Z] requirement on the name and match "creator economy", which is
+# a topic and not a person.
+CREATOR_ROLE = re.compile(
+    r"\b(?i:influencer|creator|youtuber|tiktoker|streamer|podcaster|vlogger|"
+    r"gamer|athlete|musician|comedian|host)\s+[A-Z][\w'\u2019-]+",
+)
+
+# "Dhar Mann's", "MrBeast's". A possessive proper noun is usually a person,
+# unless it is one of the platforms and companies that dominate this beat --
+# "TikTok's ad network" is not a creator story and must not be scored as one.
+CREATOR_POSSESSIVE = re.compile(r"\b([A-Z][\w\u2019'-]+)(?:\s+[A-Z][\w\u2019'-]+)?[\u2019']s\b")
+
+NOT_A_CREATOR = frozenset("""
+tiktok youtube instagram facebook meta snapchat snap twitch kick spotify apple
+amazon netflix disney google alphabet twitter threads bluesky patreon substack
+roblox discord reddit linkedin pinterest microsoft openai anthropic adobe
+paramount warner comcast nbcuniversal fox sony universal hulu peacock max
+collabstr shopify stripe nielsen comscore informa clarion
+digiday adweek variety deadline tubefilter netinfluencer passionfruit glossy
+monday tuesday wednesday thursday friday saturday sunday today
+""".split())
+
+# A figure in the headline. Her brief asks for numbers, and a dated amount is
+# the difference between a business event and commentary about one.
+MONEY_IN_TITLE = re.compile(
+    r"\$\s?\d|\b\d+(?:\.\d+)?\s?(?:m|bn|b|k|million|billion)\b"
+    r"|\b(?:nine|eight|seven|six)-figure\b|\b\d+\s?%|\b\d+-\d+\s?%",
+    re.IGNORECASE,
+)
+
+# Deal economics rather than deal announcements. This is the vocabulary of how
+# creator money actually works, which STRONG_TERMS has no words for.
+ECONOMICS = re.compile(
+    r"\b(?:rate|rates|benchmark|benchmarks|cpm|rpm|revenue|margin|payout|payouts|"
+    r"fee|fees|pricing|valuation|equity|stake|royalt\w+|split|splits|advance|"
+    r"guarantee|economics|commission|markup|take\s+rate)\b",
+    re.IGNORECASE,
+)
+
+# Creator-as-company, which her brief names directly: "creator-company
+# launches" and "creator-as-company dynamics".
+FORMATION = re.compile(
+    r"\b(?:co-?founds?|co-?founded|founds|founded|launches|launched|forms|formed|"
+    r"spins?\s+(?:out|off)|incorporat\w+|holding\s+compan\w+|venture\s+arm|"
+    r"production\s+compan\w+|media\s+compan\w+|own\w*\s+compan\w+)\b",
+    re.IGNORECASE,
+)
+
+_CREATOR_WORDS = re.compile(
+    r"\b(?:creator|creators|influencer|influencers|athlete|athletes|youtuber|"
+    r"streamer|podcaster|talent)\b", re.IGNORECASE)
+
+
+def creator_subject(title: str) -> bool:
+    """Is a named creator the subject of this headline, rather than a company?
+
+    Deliberately title-only. A creator named in paragraph nine is a mention;
+    a creator in the headline is the story.
+    """
+    if CREATOR_ROLE.search(title):
+        return True
+    for match in CREATOR_POSSESSIVE.finditer(title):
+        if match.group(1).casefold() not in NOT_A_CREATOR:
+            return True
+    return False
+
+
+def creator_first_bonus(story: Story) -> int:
+    """How much this story is creators doing business, not infrastructure."""
+    title = story.title
+    bonus = 0
+    if creator_subject(title):
+        bonus += 3
+    if MONEY_IN_TITLE.search(title):
+        bonus += 1
+    if ECONOMICS.search(title):
+        bonus += 1
+    # Creator-company formation only counts when a creator is involved;
+    # otherwise "launches" matches every product announcement on the wire.
+    if FORMATION.search(title) and _CREATOR_WORDS.search(title):
+        bonus += 2
+    return bonus
+
+
 def relevance(story: Story) -> int:
     """How much this story is creator business, independent of when it broke.
 
@@ -647,6 +759,8 @@ def relevance(story: Story) -> int:
     # difference between a story about the creator economy and a story that
     # mentions it in passing.
     score += 2 if core.search(story.title) else 0
+    # Creators doing business outrank infrastructure news about them.
+    score += creator_first_bonus(story)
     return score
 
 

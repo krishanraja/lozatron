@@ -1,13 +1,43 @@
-// Lauren's feedback button, and the request box behind it.
+// Lauren's feedback button.
 //
 // She asked for this on 5 October 2026: "is there anyway for me to interact
 // with the AI? I prefer chatting to it and being able to have some control in
 // pushing it to gather stories" and "this view introduces friction where I
 // need to go through you."
 //
-// A button in the brief email lands here with her choice already made, so the
-// page opens with that choice selected and one tap sends it. Notes are
-// optional. Nothing is read from an inbox and nothing routes through Krish.
+// WHY THIS IS PLAIN TEXT, AND NOT A STYLED PAGE.
+//
+// This endpoint used to render a designed HTML page with a note box. It
+// reached her phone as a wall of raw source code. The cause is not in this
+// file: the Supabase gateway serves every response from this project as
+// `content-type: text/plain` with `x-content-type-options: nosniff` and
+// `content-security-policy: default-src 'none'; sandbox`, whatever the
+// function sets. Verified on 6 October against both Edge Functions and
+// Storage, so it is a project-wide policy and not a function bug. A browser
+// given text/plain prints the markup instead of rendering it.
+//
+// So this stops fighting the platform. The response is written as plain prose
+// that reads correctly *because* it is served as text. One tap records her
+// verdict and she gets a sentence back.
+//
+// The note box needs a host that will serve HTML. That page is written and
+// committed at web/api/index.js, ready to deploy; LOZ_SIGNAL_URL in the
+// renderer repoints the email's buttons at it in one variable. Until then the
+// verdict buttons work and the notes channel does not.
+//
+// If this ever regresses, the symptom is a wall of source code on a phone,
+// and the smoke test is `curl -D -` reading the content-type, never the
+// status code alone.
+//
+// WHY A GET WRITES.
+//
+// Normally a GET should not change state. Here it must: without HTML there is
+// no form to POST, so the tap itself has to be the write. The cost is that a
+// link prescanner could file a phantom row. That is bounded on purpose, and
+// it is the same bound the security note below already relies on: the only
+// thing reachable is one inert preference row in a table nothing acts on
+// automatically. A form she cannot use would be worse. POST still works, for
+// the hosted page once it exists.
 //
 // SECURITY NOTE, stated plainly because it is a real trade-off. These links
 // carry no signature. The brief is rendered in GitHub Actions, which has no
@@ -25,11 +55,16 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// `sent` is what she reads after tapping. Written as a sentence a person
+// would say, because it is the only thing she sees.
 const ACTIONS: Record<string, { label: string; sent: string }> = {
-  more: { label: "More like this", sent: "More like this, noted." },
-  less: { label: "Not for me", sent: "Not for me, noted." },
+  more: { label: "More like this", sent: "Noted: you want more like this." },
+  less: { label: "Not for me", sent: "Noted: not for you." },
   keep: { label: "Worth keeping", sent: "Filed as worth keeping." },
-  ask: { label: "Chase this", sent: "On it. That goes into the next brief's sourcing." },
+  ask: {
+    label: "Chase this",
+    sent: "On it. That goes into the next brief's sourcing.",
+  },
 };
 
 // MIRRORS core.EDITION_ID_RE. Keep the two in step.
@@ -49,144 +84,39 @@ function editionAcceptable(id: string): boolean {
   return age >= -2 && age <= RETAIN_DAYS;
 }
 
-const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-   .replace(/"/g, "&quot;");
+// Served as text/plain whatever we ask for, so the body has to read as text.
+// No markup, no entities: a `&` is a `&`.
+const TEXT = {
+  "Content-Type": "text/plain; charset=utf-8",
+  "Cache-Control": "no-store",
+  "Referrer-Policy": "no-referrer",
+};
 
-// Typography and palette are the brief email's own, so the page reads as the
-// same publication rather than a form bolted onto it.
-const INK = "#14171a", PAPER = "#faf8f5", MUTED = "#6b7075", RULE = "#e4e0da";
-const ANSWER = "#1f6f5c", LINK = "#1b5e8c";
-const SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
-const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace";
-
-function shell(inner: string, title: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)}</title><style>
-:root{color-scheme:light}
-*{box-sizing:border-box}
-body{margin:0;background:${PAPER};color:${INK};font-family:${SANS};
- font-size:17px;line-height:1.5;-webkit-text-size-adjust:100%}
-.wrap{max-width:540px;margin:0 auto;padding:40px 20px 72px}
-.mast{font-family:${MONO};font-size:12px;letter-spacing:.14em;
- text-transform:uppercase;color:${MUTED};margin:0 0 28px}
-h1{font-size:22px;line-height:1.3;font-weight:600;margin:0 0 6px;
- letter-spacing:-.01em}
-.src{font-family:${MONO};font-size:12px;color:${MUTED};margin:0 0 28px}
-.q{font-family:${MONO};font-size:12px;letter-spacing:.08em;
- text-transform:uppercase;color:${MUTED};margin:0 0 10px}
-fieldset{border:0;padding:0;margin:0 0 26px}
-legend{padding:0}
-.opts{display:grid;gap:8px}
-label.opt{display:flex;align-items:center;gap:12px;min-height:52px;
- padding:0 16px;border:1px solid ${RULE};border-radius:4px;background:#fff;
- cursor:pointer;font-size:16px}
-label.opt:focus-within{outline:2px solid ${LINK};outline-offset:2px}
-label.opt input{width:20px;height:20px;accent-color:${ANSWER};margin:0;flex:none}
-label.opt.on{border-color:${ANSWER};box-shadow:inset 0 0 0 1px ${ANSWER}}
-textarea{width:100%;min-height:124px;padding:14px;border:1px solid ${RULE};
- border-radius:4px;font:inherit;background:#fff;color:${INK};resize:vertical}
-textarea:focus{outline:2px solid ${LINK};outline-offset:1px}
-.hint{font-size:14px;color:${MUTED};margin:8px 0 0}
-button{width:100%;min-height:52px;margin:26px 0 0;border:0;border-radius:4px;
- background:${INK};color:${PAPER};font:inherit;font-weight:600;font-size:17px;
- cursor:pointer}
-button:focus-visible{outline:2px solid ${LINK};outline-offset:3px}
-.done{font-size:19px;line-height:1.45;margin:0 0 10px}
-.rule{height:1px;background:${RULE};border:0;margin:0 0 28px}
-a{color:${LINK}}
-@media (prefers-color-scheme:dark){
- body{background:#14171a;color:#f3f1ee}
- label.opt,textarea{background:#1c2024;border-color:#2e3338;color:#f3f1ee}
- button{background:#f3f1ee;color:#14171a}
- .rule{background:#2e3338}
-}
-</style></head><body><div class="wrap">
-<p class="mast">Lozatron</p>${inner}</div></body></html>`;
+// One blank line under the masthead, the sentence, then what to do next.
+// Reads as a note rather than a receipt.
+function page(body: string): string {
+  return `LOZATRON\n\n${body}\n`;
 }
 
-function form(edition: string, cluster: string, titleText: string,
-              outlet: string, action: string): string {
-  const opts = Object.entries(ACTIONS).map(([key, meta]) => `
-    <label class="opt${key === action ? " on" : ""}">
-      <input type="radio" name="action" value="${key}"${key === action ? " checked" : ""}>
-      <span>${esc(meta.label)}</span>
-    </label>`).join("");
-  return shell(`
-<h1>${esc(titleText || "This edition")}</h1>
-<p class="src">${esc(outlet || "Lozatron")}</p>
-<hr class="rule">
-<form method="POST" action="">
-  <input type="hidden" name="edition" value="${esc(edition)}">
-  <input type="hidden" name="cluster" value="${esc(cluster)}">
-  <input type="hidden" name="title" value="${esc(titleText)}">
-  <fieldset>
-    <legend class="q">Your call</legend>
-    <div class="opts">${opts}</div>
-  </fieldset>
-  <label class="q" for="note">Anything to add</label>
-  <textarea id="note" name="note" maxlength="4000"
-    placeholder="Optional. What to chase, what to drop, what you want more of."></textarea>
-  <p class="hint">Goes straight to Lozatron. Nobody else reads it first.</p>
-  <button type="submit">Send</button>
-</form>`, "Lozatron feedback");
-}
+const EXPIRED = page(
+  "That link has expired.\n\n" +
+    "Replying to the brief still reaches Krish.",
+);
 
-function thanks(action: string): string {
-  const meta = ACTIONS[action] ?? ACTIONS.keep;
-  return shell(`
-<p class="done">${esc(meta.sent)}</p>
-<p class="hint">You can close this. It is already recorded.</p>`, "Sent");
-}
+const FAILED = page(
+  "Lozatron could not file that just now.\n\n" +
+    "Nothing was recorded, so it is worth sending again. If it fails twice,\n" +
+    "replying to the brief reaches Krish and he will get it in.",
+);
 
-Deno.serve(async (req: Request) => {
-  const url = new URL(req.url);
-  const headers = { "Content-Type": "text/html; charset=utf-8",
-                    "Cache-Control": "no-store",
-                    "Referrer-Policy": "no-referrer" };
-
-  if (req.method === "GET") {
-    const edition = url.searchParams.get("e") ?? "";
-    if (!editionAcceptable(edition)) {
-      return new Response(shell(
-        `<p class="done">That link has expired.</p>
-         <p class="hint">Reply to the brief instead and it will reach Krish.</p>`,
-        "Expired"), { status: 410, headers });
-    }
-    const action = url.searchParams.get("a") ?? "keep";
-    return new Response(form(
-      edition,
-      url.searchParams.get("c") ?? "",
-      url.searchParams.get("t") ?? "",
-      url.searchParams.get("o") ?? "",
-      action in ACTIONS ? action : "keep",
-    ), { headers });
-  }
-
-  if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
-  }
-
-  const body = new URLSearchParams(await req.text());
-  const edition = (body.get("edition") ?? "").trim();
-  const action = (body.get("action") ?? "").trim();
-  if (!editionAcceptable(edition) || !(action in ACTIONS)) {
-    return new Response(shell(
-      `<p class="done">That did not go through.</p>
-       <p class="hint">Reply to the brief instead and it will reach Krish.</p>`,
-      "Not sent"), { status: 400, headers });
-  }
-
-  const row = {
-    edition_id: edition,
-    cluster_key: (body.get("cluster") ?? "").trim() || null,
-    story_title: (body.get("title") ?? "").slice(0, 500),
-    action,
-    note: (body.get("note") ?? "").slice(0, 4000),
-    agent: (req.headers.get("user-agent") ?? "").slice(0, 300),
-  };
-
+async function record(row: {
+  edition_id: string;
+  cluster_key: string | null;
+  story_title: string;
+  action: string;
+  note: string;
+  agent: string;
+}): Promise<boolean> {
   // Through an RPC in `public`, not a table insert. The lozatron schema is
   // deliberately not exposed over the API, and widening the project's exposed
   // schema list for one insert would put a private schema on a public surface.
@@ -206,18 +136,75 @@ Deno.serve(async (req: Request) => {
       p_agent: row.agent,
     }),
   });
+  return res.ok;
+}
 
-  if (!res.ok) {
-    // Her input must never vanish silently. Echo it back so it can be
-    // copied, and say what happened.
-    const note = esc(row.note);
-    return new Response(shell(
-      `<p class="done">Lozatron could not file that just now.</p>
-       <p class="hint">Your words are below so they are not lost. Sending this
-       to Krish will get it in.</p><hr class="rule">
-       <textarea readonly>${note}</textarea>`,
-      "Not filed"), { status: 502, headers });
+Deno.serve(async (req: Request) => {
+  const url = new URL(req.url);
+  const agent = (req.headers.get("user-agent") ?? "").slice(0, 300);
+
+  // The tap itself. One GET, one recorded verdict, one sentence back.
+  if (req.method === "GET") {
+    const edition = url.searchParams.get("e") ?? "";
+    const action = url.searchParams.get("a") ?? "";
+    if (!editionAcceptable(edition)) {
+      return new Response(EXPIRED, { status: 410, headers: TEXT });
+    }
+    if (!(action in ACTIONS)) {
+      return new Response(EXPIRED, { status: 400, headers: TEXT });
+    }
+
+    const ok = await record({
+      edition_id: edition,
+      cluster_key: (url.searchParams.get("c") ?? "").trim() || null,
+      story_title: (url.searchParams.get("t") ?? "").slice(0, 500),
+      action,
+      note: "",
+      agent,
+    });
+    if (!ok) return new Response(FAILED, { status: 502, headers: TEXT });
+
+    const title = (url.searchParams.get("t") ?? "").trim();
+    const subject = title ? `\n\nOn: ${title}` : "";
+    return new Response(
+      page(
+        `${ACTIONS[action].sent}${subject}\n\n` +
+          "You can close this. Nothing else is needed.\n\n" +
+          "To say more than a tap, reply to the brief and it reaches Krish.",
+      ),
+      { headers: TEXT },
+    );
   }
 
-  return new Response(thanks(action), { headers });
+  // Kept for the hosted note page at web/api/index.js, which forwards here
+  // server to server so the service key never leaves this project.
+  if (req.method !== "POST") {
+    return new Response(page("Method not allowed."), {
+      status: 405,
+      headers: TEXT,
+    });
+  }
+
+  const body = new URLSearchParams(await req.text());
+  const edition = (body.get("edition") ?? "").trim();
+  const action = (body.get("action") ?? "").trim();
+  if (!editionAcceptable(edition) || !(action in ACTIONS)) {
+    return new Response(page("That did not go through."), {
+      status: 400,
+      headers: TEXT,
+    });
+  }
+
+  const note = (body.get("note") ?? "").slice(0, 4000);
+  const ok = await record({
+    edition_id: edition,
+    cluster_key: (body.get("cluster") ?? "").trim() || null,
+    story_title: (body.get("title") ?? "").slice(0, 500),
+    action,
+    note,
+    agent,
+  });
+  if (!ok) return new Response(FAILED, { status: 502, headers: TEXT });
+
+  return new Response(page(ACTIONS[action].sent), { headers: TEXT });
 });
