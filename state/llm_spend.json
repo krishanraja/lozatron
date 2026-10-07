@@ -145,6 +145,17 @@
         "total_tokens": 3735
       },
       "usd": 0.053015
+    },
+    {
+      "date": "2026-10-07",
+      "model": "claude-opus-5",
+      "status": "succeeded",
+      "usage": {
+        "completion_tokens": 3170,
+        "prompt_tokens": 3586,
+        "total_tokens": 6756
+      },
+      "usd": 0.09718
     }
   ],
   "version": 1
