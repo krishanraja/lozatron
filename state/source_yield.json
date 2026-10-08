@@ -1149,6 +1149,260 @@
         "fresh": 0,
         "items": 20
       }
+    },
+    "2026-10-08": {
+      "Adweek": {
+        "delivered": 0,
+        "eligible": 2,
+        "fresh": 13,
+        "items": 14
+      },
+      "Africasacountry.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Archive.ph": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Bleeding Cool News": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Business Insider": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "C21media.net": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Catchers.agency": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Dailymail.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Dallas Observer": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Dancohen.org": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Deadline": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 15,
+        "items": 15
+      },
+      "Digiday": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 15,
+        "items": 18
+      },
+      "Entrepreneur": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "Github.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Gizmodo.com": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "Glossy": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 5,
+        "items": 20
+      },
+      "Hollywood Reporter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "Influencer Marketing Hub": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 9
+      },
+      "Kajabi": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "NetInfluencer": {
+        "delivered": 2,
+        "eligible": 3,
+        "fresh": 9,
+        "items": 10
+      },
+      "New York Post": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "PCMag.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "PRNewswire": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 6,
+        "items": 6
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 10
+      },
+      "Pehub.com": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 2,
+        "items": 40
+      },
+      "Practical Ecommerce": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Screen Rant": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Social Media Today": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 10,
+        "items": 10
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 9,
+        "items": 10
+      },
+      "Styleafrique.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 20,
+        "items": 20
+      },
+      "The Irish Times": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "The Next Web": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "The Root": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "The Times of India": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "The Verge": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "Tubefilter": {
+        "delivered": 1,
+        "eligible": 4,
+        "fresh": 8,
+        "items": 12
+      },
+      "Variety": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 11,
+        "items": 11
+      },
+      "Wccftech": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "We Live Security": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "YouTube Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 20
+      }
     }
   },
   "version": 1
