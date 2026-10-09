@@ -1403,6 +1403,224 @@
         "fresh": 0,
         "items": 20
       }
+    },
+    "2026-10-09": {
+      "Adweek": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 14,
+        "items": 14
+      },
+      "Antaranews.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Blogdoandroid.com": {
+        "delivered": 1,
+        "eligible": 2,
+        "fresh": 2,
+        "items": 2
+      },
+      "Card Chronicle": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Chicago Reader": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Dailymail.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Deadline": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 13,
+        "items": 13
+      },
+      "Digiday": {
+        "delivered": 0,
+        "eligible": 2,
+        "fresh": 12,
+        "items": 16
+      },
+      "GamesIndustry.biz": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Glossy": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 5,
+        "items": 20
+      },
+      "Help Net Security": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Hollywood Reporter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "Influencer Marketing Hub": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 4,
+        "items": 9
+      },
+      "Kajabi": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "Kotaku": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Livemint": {
+        "delivered": 1,
+        "eligible": 2,
+        "fresh": 2,
+        "items": 2
+      },
+      "NetInfluencer": {
+        "delivered": 2,
+        "eligible": 5,
+        "fresh": 10,
+        "items": 10
+      },
+      "New Zealand Herald": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "PCMag.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "PR Newswire UK": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 2
+      },
+      "PRNewswire": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 4
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 10
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 40
+      },
+      "Social Media Today": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 10,
+        "items": 10
+      },
+      "Socialmediaexaminer.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 6,
+        "items": 10
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 19,
+        "items": 20
+      },
+      "The Punch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "The Verge": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "TheWrap": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 3,
+        "items": 3
+      },
+      "Tubefilter": {
+        "delivered": 2,
+        "eligible": 5,
+        "fresh": 9,
+        "items": 13
+      },
+      "Variety": {
+        "delivered": 2,
+        "eligible": 2,
+        "fresh": 12,
+        "items": 12
+      },
+      "WWD": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Wccftech": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Windows Central": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "YouTube Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 20
+      }
     }
   },
   "version": 1
