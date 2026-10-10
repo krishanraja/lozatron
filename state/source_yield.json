@@ -1621,6 +1621,224 @@
         "fresh": 0,
         "items": 20
       }
+    },
+    "2026-10-10": {
+      "Adweek": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 11,
+        "items": 11
+      },
+      "Anime News Network": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Audienceful.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Biztoc.com": {
+        "delivered": 0,
+        "eligible": 2,
+        "fresh": 2,
+        "items": 2
+      },
+      "Business Insider": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 4,
+        "items": 4
+      },
+      "CMSWire": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Deadline": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 12,
+        "items": 12
+      },
+      "Digiday": {
+        "delivered": 0,
+        "eligible": 6,
+        "fresh": 8,
+        "items": 19
+      },
+      "Futurism": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Getcraver.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Gizmodo.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Glossy": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 3,
+        "items": 20
+      },
+      "Hollywood Reporter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 12,
+        "items": 12
+      },
+      "Influencer Marketing Hub": {
+        "delivered": 1,
+        "eligible": 2,
+        "fresh": 4,
+        "items": 9
+      },
+      "Kajabi": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "Kotaku": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Nathanbarry.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 3
+      },
+      "NetInfluencer": {
+        "delivered": 2,
+        "eligible": 5,
+        "fresh": 10,
+        "items": 10
+      },
+      "New York Post": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "PCMag.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "PRNewswire": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 7,
+        "items": 7
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 4,
+        "items": 10
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 40
+      },
+      "Search Engine Journal": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "SiliconANGLE News": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Social Media Today": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 6,
+        "items": 10
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 10
+      },
+      "Storagereview.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 18,
+        "items": 20
+      },
+      "The Atlantic": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "The Times of India": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "The Verge": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 12,
+        "items": 12
+      },
+      "Tubefilter": {
+        "delivered": 1,
+        "eligible": 7,
+        "fresh": 9,
+        "items": 14
+      },
+      "Variety": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 12,
+        "items": 12
+      },
+      "WWD": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "YouTube Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 20
+      }
     }
   },
   "version": 1
