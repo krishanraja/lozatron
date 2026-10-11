@@ -1839,6 +1839,218 @@
         "fresh": 0,
         "items": 20
       }
+    },
+    "2026-10-11": {
+      "ABC News (AU)": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Adweek": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 10,
+        "items": 10
+      },
+      "Dailymail.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Deadline": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 13,
+        "items": 13
+      },
+      "Digiday": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 15
+      },
+      "Digistreetmedia.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Financial Post": {
+        "delivered": 1,
+        "eligible": 3,
+        "fresh": 3,
+        "items": 3
+      },
+      "Glossy": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 20
+      },
+      "Heavy.com": {
+        "delivered": 1,
+        "eligible": 2,
+        "fresh": 2,
+        "items": 2
+      },
+      "Highsnobiety": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Hollywood Reporter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 11,
+        "items": 11
+      },
+      "IGN": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Influencer Marketing Hub": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 9
+      },
+      "Kajabi": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "Lifeasmom.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Martechinfopro.com": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "NetInfluencer": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 10
+      },
+      "PR Newswire UK": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 4,
+        "items": 10
+      },
+      "Pirnotes.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "SiliconANGLE News": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "Smartbusinesnews.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Social Media Today": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 10
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 10
+      },
+      "Sproutsocial.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 17,
+        "items": 20
+      },
+      "Tedgaldi.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "The Punch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "The Verge": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "TheWrap": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 1,
+        "items": 1
+      },
+      "Tubefilter": {
+        "delivered": 0,
+        "eligible": 3,
+        "fresh": 4,
+        "items": 13
+      },
+      "Variety": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 11,
+        "items": 11
+      },
+      "WWD": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "YouTube Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 20
+      }
     }
   },
   "version": 1
