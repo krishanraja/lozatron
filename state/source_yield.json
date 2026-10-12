@@ -2051,6 +2051,134 @@
         "fresh": 0,
         "items": 20
       }
+    },
+    "2026-10-12": {
+      "Adweek": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 3,
+        "items": 10
+      },
+      "Bleeding Cool News": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Celtics Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Deadline": {
+        "delivered": 2,
+        "eligible": 3,
+        "fresh": 12,
+        "items": 12
+      },
+      "Digiday": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 5,
+        "items": 15
+      },
+      "Glossy": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 20
+      },
+      "Hollywood Reporter": {
+        "delivered": 0,
+        "eligible": 1,
+        "fresh": 10,
+        "items": 10
+      },
+      "Influencer Marketing Hub": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 9
+      },
+      "Kajabi": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 40
+      },
+      "NetInfluencer": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 6,
+        "items": 10
+      },
+      "Passionfruit": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 10
+      },
+      "Podnews": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 40
+      },
+      "Social Media Today": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 4,
+        "items": 10
+      },
+      "Spotify Newsroom": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 10
+      },
+      "TechCrunch": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 15,
+        "items": 21
+      },
+      "The Verge": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 10,
+        "items": 10
+      },
+      "The-sentence.com": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 1
+      },
+      "Tom's Hardware UK": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 2,
+        "items": 2
+      },
+      "Tubefilter": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 0,
+        "items": 12
+      },
+      "Variety": {
+        "delivered": 1,
+        "eligible": 1,
+        "fresh": 11,
+        "items": 11
+      },
+      "YouTube Blog": {
+        "delivered": 0,
+        "eligible": 0,
+        "fresh": 1,
+        "items": 20
+      }
     }
   },
   "version": 1
