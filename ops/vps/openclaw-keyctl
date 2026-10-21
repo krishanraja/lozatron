@@ -1,0 +1,434 @@
+#!/usr/bin/env python3
+"""openclaw-keyctl: one place for the VPS's LLM API keys, plus Lozatron's delivery guard.
+
+Installed at /usr/local/sbin/openclaw-keyctl (root:root 0755) by ops/vps/install.sh.
+
+Every OpenClaw agent reads its Anthropic, OpenAI and DeepSeek API keys through a
+SecretRef that points at ONE root-only file, KEYS_FILE. Nothing else on the box
+holds a copy, so replacing a key means replacing it here and nowhere else.
+
+Subcommands
+  apply      Read {"anthropic": "...", "openai": "...", "deepseek": "..."} on stdin.
+             Each key is tested with a real, tiny API call BEFORE it is written.
+             A key that fails is refused and the last-known-good key stays in
+             place, so a bad paste can never take the fleet down.
+  status     Print a JSON health summary (no secret material). Used by the
+             GitHub watchdog over the locked-down keysync SSH key.
+  test       Test the installed keys and print the results.
+  preflight  14:30 London: test keys, lint cron models against the allowlist,
+             check the gateway. Telegram-alerts Krish on any problem.
+  postcheck  15:45 and 16:45 London: confirm Telegram accepted today's brief to
+             Lauren. First miss triggers one rerun; a second miss alerts Krish.
+
+When called through SSH as the keysync user, only `apply` and `status` are
+allowed (see ALLOWED_OVER_SSH); everything else is refused.
+"""
+
+import datetime as dt
+import glob
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from zoneinfo import ZoneInfo
+
+OPENCLAW = "/root/.openclaw"
+KEYS_FILE = f"{OPENCLAW}/secrets/llm-keys.json"
+STATE_DIR = "/var/lib/openclaw-keyctl"
+STATE_FILE = f"{STATE_DIR}/state.json"
+CONFIG = f"{OPENCLAW}/openclaw.json"
+JOBS = f"{OPENCLAW}/cron/jobs.json"
+RUNS_DIR = f"{OPENCLAW}/cron/runs"
+ALERT_TOKEN_FILE = f"{OPENCLAW}/credentials/agatha-telegram.token"
+ALERT_CHAT = "6773796504"          # Krish, via @agathaops_bot ("Arlo" in his Telegram)
+LAUREN_CHAT = "7050432686"
+BRIEF_JOB = "427dc942-b6da-4a28-b702-247785aa60ca"
+LONDON = ZoneInfo("Europe/London")
+PROVIDERS = ("anthropic", "openai", "deepseek")
+ALLOWED_OVER_SSH = {"apply", "status"}
+OPENCLAW_BIN = "/usr/bin/openclaw"
+CONFIGURE = "/usr/local/lib/openclaw-keyctl/configure_openclaw.py"
+
+
+# ---------- small helpers ----------
+
+def now_london():
+    return dt.datetime.now(LONDON)
+
+
+def fingerprint(key):
+    """Non-reversible id for a key, so reports can say 'changed' without revealing it."""
+    return hashlib.sha256(key.encode()).hexdigest()[:8] if key else None
+
+
+def load_json(path, default):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+
+
+def write_json_atomic(path, data, mode=0o600):
+    d = os.path.dirname(path)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def http(method, url, headers, body=None, timeout=30):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read().decode(errors="replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(errors="replace")
+    except Exception as e:  # network, DNS, timeout
+        return 0, str(e)
+
+
+def classify(status, text):
+    t = text.lower()
+    if status == 200:
+        return "ok"
+    if status in (401, 403):
+        return "invalid"
+    if status == 402 or "credit balance" in t or "insufficient" in t or "quota" in t or "billing" in t:
+        return "billing"
+    if status == 429:
+        return "rate_limited"
+    if status == 0:
+        return "unreachable"
+    return f"error_{status}"
+
+
+# ---------- live key tests (each costs a fraction of a cent) ----------
+
+def test_anthropic(key):
+    s, t = http("POST", "https://api.anthropic.com/v1/messages",
+                {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                {"model": "claude-haiku-4-5-20251001", "max_tokens": 1,
+                 "messages": [{"role": "user", "content": "ping"}]})
+    return {"result": classify(s, t)}
+
+
+def test_openai(key):
+    s, t = http("POST", "https://api.openai.com/v1/chat/completions",
+                {"Authorization": f"Bearer {key}", "content-type": "application/json"},
+                {"model": "gpt-4o-mini", "max_tokens": 1,
+                 "messages": [{"role": "user", "content": "ping"}]})
+    return {"result": classify(s, t)}
+
+
+def test_deepseek(key):
+    s, t = http("GET", "https://api.deepseek.com/user/balance", {"Authorization": f"Bearer {key}"})
+    out = {"result": classify(s, t)}
+    if s == 200:
+        try:
+            info = json.loads(t)
+            bal = info.get("balance_infos") or []
+            out["balance"] = ", ".join(f"{b.get('total_balance')} {b.get('currency')}" for b in bal)
+            if not info.get("is_available", True):
+                out["result"] = "billing"
+        except json.JSONDecodeError:
+            pass
+    return out
+
+
+TESTS = {"anthropic": test_anthropic, "openai": test_openai, "deepseek": test_deepseek}
+
+
+def test_all(keys):
+    results = {}
+    for p in PROVIDERS:
+        k = keys.get(p)
+        results[p] = TESTS[p](k) if k else {"result": "missing"}
+        results[p]["fingerprint"] = fingerprint(k)
+    return results
+
+
+# ---------- OpenClaw plumbing ----------
+
+def gateway_active():
+    r = subprocess.run(["systemctl", "--user", "is-active", "openclaw-gateway"],
+                       env={**os.environ, "XDG_RUNTIME_DIR": "/run/user/0"},
+                       capture_output=True, text=True)
+    return r.stdout.strip() == "active"
+
+
+def reload_gateway():
+    """Swap the gateway's secret snapshot; fall back to a restart if reload fails."""
+    env = {**os.environ, "HOME": "/root"}
+    r = subprocess.run([OPENCLAW_BIN, "secrets", "reload"], env=env, capture_output=True, text=True, timeout=120)
+    if r.returncode == 0:
+        return "reloaded"
+    subprocess.run(["systemctl", "--user", "restart", "openclaw-gateway"],
+                   env={**env, "XDG_RUNTIME_DIR": "/run/user/0"}, timeout=120)
+    return "restarted"
+
+
+def reconfigure_gateway():
+    env = {**os.environ, "HOME": "/root", "XDG_RUNTIME_DIR": "/run/user/0"}
+    subprocess.run(["systemctl", "--user", "stop", "openclaw-gateway"], env=env, timeout=120)
+    try:
+        subprocess.run(["python3", CONFIGURE], env=env, check=True, capture_output=True, timeout=120)
+        result = "reconfigured"
+    except subprocess.CalledProcessError as e:
+        result = f"configure failed: {e.stderr.decode(errors='replace')[-300:]}"
+    subprocess.run(["systemctl", "--user", "start", "openclaw-gateway"], env=env, timeout=120)
+    return result
+
+
+def clear_api_cooldowns(providers):
+    """A replaced key must not inherit the old key's billing cooldown."""
+    cleared = 0
+    for path in glob.glob(f"{OPENCLAW}/agents/*/agent/auth-state.json"):
+        st = load_json(path, None)
+        if not st or "usageStats" not in st:
+            continue
+        changed = False
+        for p in providers:
+            pid = f"{p}:api"
+            if pid in st["usageStats"]:
+                del st["usageStats"][pid]
+                changed = True
+        if changed:
+            write_json_atomic(path, st)
+            cleared += 1
+    return cleared
+
+
+def lint_cron_models():
+    """The 2026-09 outage: a cron model missing from the allowlist is rejected before the run starts."""
+    cfg = load_json(CONFIG, {})
+    allow = set((cfg.get("agents", {}).get("defaults", {}).get("models") or {}).keys())
+    jobs = load_json(JOBS, {})
+    jobs = jobs.get("jobs", jobs) if isinstance(jobs, dict) else jobs
+    problems = []
+    for j in jobs or []:
+        if not j.get("enabled"):
+            continue
+        p = j.get("payload") or {}
+        for m in [p.get("model")] + list(p.get("fallbacks") or []):
+            if m and allow and m not in allow:
+                problems.append(f"cron '{j.get('name')}' uses {m}, which is not on the model allowlist")
+    return problems
+
+
+def brief_job():
+    jobs = load_json(JOBS, {})
+    jobs = jobs.get("jobs", jobs) if isinstance(jobs, dict) else jobs
+    return next((j for j in jobs or [] if j.get("id") == BRIEF_JOB), None)
+
+
+def delivered_today():
+    """True only if Telegram itself returned ok for a send to Lauren in a run that started today (London)."""
+    today = now_london().date()
+    path = f"{RUNS_DIR}/{BRIEF_JOB}.jsonl"
+    if not os.path.exists(path):
+        return False, None
+    sessions = []
+    with open(path) as f:
+        for line in f:
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            ts = r.get("runAtMs") or r.get("ts")
+            if ts and dt.datetime.fromtimestamp(ts / 1000, LONDON).date() == today and r.get("sessionId"):
+                sessions.append(r["sessionId"])
+    pat = re.compile(r'\\?"ok\\?":\s*true,\s*\\?"messageId\\?":\s*\\?"(\d+)\\?",\s*\\?"chatId\\?":\s*\\?"' + LAUREN_CHAT)
+    for sid in reversed(sessions):
+        sp = f"{OPENCLAW}/agents/loz/sessions/{sid}.jsonl"
+        if os.path.exists(sp):
+            m = pat.search(open(sp, errors="replace").read())
+            if m:
+                return True, m.group(1)
+    return False, None
+
+
+# ---------- alerts ----------
+
+def alert(text, kind):
+    """Telegram Krish once per kind per London day. Deterministic: no LLM involved."""
+    st = load_json(STATE_FILE, {})
+    sent = st.setdefault("alerts", {})
+    tag = f"{now_london().date()}:{kind}"
+    if tag in sent:
+        return False
+    try:
+        token = open(ALERT_TOKEN_FILE).read().strip()
+        http("POST", f"https://api.telegram.org/bot{token}/sendMessage",
+             {"content-type": "application/json"},
+             {"chat_id": ALERT_CHAT, "text": f"Lozatron guard\n\n{text}", "disable_web_page_preview": True})
+    except Exception as e:
+        print(f"alert failed: {e}", file=sys.stderr)
+        return False
+    sent[tag] = now_london().isoformat()
+    for old in sorted(sent)[:-60]:
+        del sent[old]
+    write_json_atomic(STATE_FILE, st)
+    return True
+
+
+# ---------- subcommands ----------
+
+def cmd_apply():
+    raw = sys.stdin.read(65536)
+    try:
+        incoming = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        print(json.dumps({"ok": False, "error": "stdin is not JSON"}))
+        return 2
+    incoming = {p: str(incoming.get(p) or "").strip() for p in PROVIDERS}
+    current = load_json(KEYS_FILE, {})
+    report = {"ok": True, "providers": {}}
+    accepted = {}
+    for p in PROVIDERS:
+        new = incoming[p]
+        if not new:
+            report["providers"][p] = {"action": "unchanged (not supplied)", "fingerprint": fingerprint(current.get(p))}
+            continue
+        if new == current.get(p):
+            report["providers"][p] = {"action": "unchanged (same key)", "fingerprint": fingerprint(new)}
+            continue
+        res = TESTS[p](new)
+        if res["result"] == "ok":
+            accepted[p] = new
+            report["providers"][p] = {"action": "installed", **res, "fingerprint": fingerprint(new)}
+        else:
+            report["ok"] = False
+            report["providers"][p] = {"action": "REFUSED, kept previous key", **res,
+                                      "fingerprint": fingerprint(new),
+                                      "kept_fingerprint": fingerprint(current.get(p))}
+    if accepted:
+        if os.path.exists(KEYS_FILE):
+            stamp = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+            write_json_atomic(f"{KEYS_FILE}.bak-{stamp}", current)
+            for old in sorted(glob.glob(f"{KEYS_FILE}.bak-*"))[:-5]:
+                os.unlink(old)
+        write_json_atomic(KEYS_FILE, {**current, **accepted})
+        report["cooldowns_cleared_agents"] = clear_api_cooldowns(accepted)
+        newly_present = [p for p in accepted if not current.get(p)]
+        if newly_present:
+            # A provider with no key had no SecretRef (an unresolvable ref stops the gateway
+            # from starting), so wire its profiles now. The gateway must be stopped while
+            # configure edits files it also writes.
+            report["configured"] = newly_present
+            report["gateway"] = reconfigure_gateway()
+        else:
+            report["gateway"] = reload_gateway()
+    print(json.dumps(report, indent=2))
+    return 0 if report["ok"] else 1
+
+
+def cmd_status():
+    st = load_json(STATE_FILE, {})
+    ok, mid = delivered_today()
+    job = brief_job() or {}
+    print(json.dumps({
+        "london_time": now_london().isoformat(timespec="minutes"),
+        "gateway_active": gateway_active(),
+        "brief_job_enabled": bool(job.get("enabled")),
+        "delivered_today": ok,
+        "telegram_message_id": mid,
+        "last_preflight": st.get("last_preflight"),
+        "keys_present": {p: bool(load_json(KEYS_FILE, {}).get(p)) for p in PROVIDERS},
+    }, indent=2))
+    return 0
+
+
+def cmd_test():
+    print(json.dumps(test_all(load_json(KEYS_FILE, {})), indent=2))
+    return 0
+
+
+def cmd_preflight():
+    keys = load_json(KEYS_FILE, {})
+    results = test_all(keys)
+    problems = [f"{p}: {r['result']}" for p, r in results.items() if r["result"] != "ok"]
+    problems += lint_cron_models()
+    if not gateway_active():
+        problems.append("OpenClaw gateway is not running")
+    job = brief_job()
+    if not job or not job.get("enabled"):
+        problems.append("the daily brief cron job is missing or disabled")
+    working = [p for p, r in results.items() if r["result"] == "ok"]
+    st = load_json(STATE_FILE, {})
+    st["last_preflight"] = {"at": now_london().isoformat(timespec="minutes"),
+                            "results": {p: r["result"] for p, r in results.items()},
+                            "problems": problems}
+    write_json_atomic(STATE_FILE, st)
+    if problems:
+        severity = "The brief WILL FAIL at 15:00 unless fixed." if not working else \
+                   f"The brief should still go out on {', '.join(working)}."
+        alert("Preflight found problems:\n- " + "\n- ".join(problems) + f"\n\n{severity}\n\n"
+              "To replace a key: update it in the lozatron repo secrets, then run the "
+              "'Sync LLM keys to VPS' workflow.", "preflight")
+    print(json.dumps(st["last_preflight"], indent=2))
+    return 0
+
+
+def cmd_postcheck():
+    ok, mid = delivered_today()
+    st = load_json(STATE_FILE, {})
+    today = str(now_london().date())
+    if ok:
+        st["last_delivered"] = {"date": today, "telegram_message_id": mid}
+        write_json_atomic(STATE_FILE, st)
+        print(f"delivered today (Telegram message {mid})")
+        return 0
+    retries = st.setdefault("retries", {})
+    if today not in retries:
+        retries[today] = now_london().isoformat(timespec="minutes")
+        write_json_atomic(STATE_FILE, st)
+        subprocess.Popen([OPENCLAW_BIN, "cron", "run", BRIEF_JOB], env={**os.environ, "HOME": "/root"},
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        print("not delivered yet: triggered one rerun")
+        return 0
+    pre = (st.get("last_preflight") or {}).get("problems") or []
+    alert("Lauren has NOT received today's brief, and the automatic rerun did not fix it.\n\n"
+          + ("Preflight problems today:\n- " + "\n- ".join(pre) if pre else "Preflight was clean, so check the run log: "
+             f"openclaw cron runs {BRIEF_JOB}"), "missed")
+    print("not delivered after rerun: alerted")
+    return 1
+
+
+COMMANDS = {"apply": cmd_apply, "status": cmd_status, "test": cmd_test,
+            "preflight": cmd_preflight, "postcheck": cmd_postcheck}
+
+
+def main():
+    if os.geteuid() != 0:
+        sys.exit("openclaw-keyctl must run as root")
+    args = sys.argv[1:]
+    via_ssh = False
+    if args[:1] == ["--ssh"]:
+        # Forced-command entry: the requested command arrives as one string from SSH_ORIGINAL_COMMAND.
+        via_ssh = True
+        args = (args[1] if len(args) > 1 else "").split()
+    cmd = args[0] if args else ""
+    if cmd not in COMMANDS or (via_ssh and cmd not in ALLOWED_OVER_SSH):
+        allowed = sorted(ALLOWED_OVER_SSH if via_ssh else COMMANDS)
+        print(json.dumps({"ok": False, "error": f"unknown or disallowed command {cmd!r}", "allowed": allowed}))
+        sys.exit(2)
+    sys.exit(COMMANDS[cmd]())
+
+
+if __name__ == "__main__":
+    main()
