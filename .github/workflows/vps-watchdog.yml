@@ -1,0 +1,95 @@
+name: VPS watchdog
+
+# The off-box alarm. Everything else that guards the brief runs ON the VPS, so if the
+# VPS itself is down nothing there can tell Krish. This asks the VPS for its status
+# after the 15:00 London brief and Telegram-alerts Krish if it gets no answer.
+#
+# If the VPS answers but the brief was not delivered, the VPS's own guard has already
+# alerted (15:45 / 16:45 London), so this run only fails, which sends GitHub's own
+# failure email as a second, independent signal.
+#
+# Actions cron is UTC and can start hours late, so it knocks hourly and each run checks
+# the London clock itself. One Telegram alert per day at most (cache-keyed by date).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 15-21 * * *"
+
+permissions: {}
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: London date and window
+        id: when
+        run: |
+          echo "date=$(TZ=Europe/London date +%F)" >> "$GITHUB_OUTPUT"
+          if [ "$(TZ=Europe/London date +%H%M)" -ge 1550 ] || [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            echo "due=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "due=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Already alerted today?
+        id: seen
+        if: steps.when.outputs.due == 'yes'
+        uses: actions/cache/restore@v4
+        with:
+          path: alerted.txt
+          key: vps-watchdog-alerted-${{ steps.when.outputs.date }}
+
+      - name: Ask the VPS
+        id: ask
+        if: steps.when.outputs.due == 'yes'
+        env:
+          SSH_KEY: ${{ secrets.VPS_KEYSYNC_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          umask 077; mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/keysync
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          if ssh -i ~/.ssh/keysync -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=20 \
+               "keysync@${VPS_HOST}" status > status.json 2> ssh.err; then
+            echo "reachable=yes" >> "$GITHUB_OUTPUT"
+            cat status.json
+            echo "delivered=$(jq -r '.delivered_today' status.json)" >> "$GITHUB_OUTPUT"
+            echo "gateway=$(jq -r '.gateway_active' status.json)" >> "$GITHUB_OUTPUT"
+          else
+            echo "reachable=no" >> "$GITHUB_OUTPUT"
+            cat ssh.err
+          fi
+
+      - name: Alert Krish (VPS unreachable or OpenClaw down)
+        if: >-
+          steps.when.outputs.due == 'yes' && steps.seen.outputs.cache-hit != 'true' &&
+          (steps.ask.outputs.reachable == 'no' || steps.ask.outputs.gateway == 'false')
+        env:
+          BOT: ${{ secrets.ALERT_BOT_TOKEN }}
+          CHAT: ${{ secrets.ALERT_CHAT_ID }}
+          REACHABLE: ${{ steps.ask.outputs.reachable }}
+        run: |
+          if [ "$REACHABLE" = no ]; then
+            MSG="Lozatron watchdog (GitHub): the VPS did not answer. Today's brief to Lauren is at risk and the VPS cannot alert you itself. Check the Hetzner console."
+          else
+            MSG="Lozatron watchdog (GitHub): the VPS answered but the OpenClaw gateway is down, so the brief and Lauren's chats are not running."
+          fi
+          curl -sS -X POST "https://api.telegram.org/bot${BOT}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" --data-urlencode "text=${MSG}" > /dev/null
+          date -u > alerted.txt
+
+      - name: Remember the alert
+        if: hashFiles('alerted.txt') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: alerted.txt
+          key: vps-watchdog-alerted-${{ steps.when.outputs.date }}
+
+      - name: Fail if the brief is missing
+        if: steps.when.outputs.due == 'yes' && steps.ask.outputs.reachable == 'yes' && steps.ask.outputs.delivered != 'true'
+        run: |
+          echo "::error::VPS reachable but today's brief has not been delivered to Lauren."
+          exit 1

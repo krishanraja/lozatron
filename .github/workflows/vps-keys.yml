@@ -1,0 +1,56 @@
+name: Sync LLM keys to VPS
+
+# The ONE place to change the VPS's Anthropic, OpenAI and DeepSeek API keys.
+#
+#   1. Repo Settings > Secrets and variables > Actions: update ANTHROPIC_API_KEY,
+#      OPENAI_API_KEY and/or DEEPSEEK_API_KEY.
+#   2. Actions > "Sync LLM keys to VPS" > Run workflow.
+#
+# The VPS tests each key with a real, tiny API call before installing it. A key that
+# fails is refused and the old one stays, so this run can never take the agents down.
+# Secrets are write-only in GitHub: nobody, including this workflow's log, can read
+# them back. A secret left empty is skipped, not deleted.
+#
+# The SSH key here can only run `openclaw-keyctl apply|status` on the VPS (forced
+# command + sudoers rule, see ops/vps/install.sh). It cannot open a shell.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly re-assert, Mondays 06:41 UTC. A no-op when nothing changed; it also proves
+    # the sync path still works before the day you actually need it.
+    - cron: "41 6 * * 1"
+
+permissions: {}
+
+concurrency:
+  group: vps-keys
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Push keys to the VPS key store
+        env:
+          SSH_KEY: ${{ secrets.VPS_KEYSYNC_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/keysync
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          jq -n --arg a "$ANTHROPIC_API_KEY" --arg o "$OPENAI_API_KEY" --arg d "$DEEPSEEK_API_KEY" \
+            '{anthropic: $a, openai: $o, deepseek: $d}' \
+          | ssh -i ~/.ssh/keysync -o StrictHostKeyChecking=yes -o BatchMode=yes \
+              "keysync@${VPS_HOST}" apply | tee report.json
+          echo "### Key sync result" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.providers | to_entries[] | "- **\(.key)**: \(.value.action) \(.value.result // "") \(.value.balance // "")"' \
+            report.json >> "$GITHUB_STEP_SUMMARY"
+          jq -e '.ok' report.json > /dev/null
